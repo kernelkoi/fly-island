@@ -28,7 +28,7 @@ const dayFromNow = (offset: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 const session = (id: string, title: string, detail: string | null, status: string, updatedAt: number, action: string | null, cwd: string | null = "工作", due: string | null = null, repeat = false) =>
-  ({ id, title, detail, kind: "task", cwd, listId: id.split(":")[0] || null, due, repeat, status, updatedAt, action });
+  ({ id, title, detail, kind: "task", cwd, listId: id.split(":")[0] || null, due, repeat, status, updatedAt, action, bucket: !due ? "future" : due < dayFromNow(0) ? (repeat ? "today" : "overdue") : due === dayFromNow(0) ? "today" : "future" });
 const live = {
   dida365: {
     status: "running",
@@ -37,7 +37,7 @@ const live = {
       // Finished rows carry a reopen action, not a complete one: their check undoes the completion.
       session("p1:done", "已完成的活", null, "completed", 30, "reopen.p1.done", "工作", dayFromNow(0)),
       session("p2:done2", "刚完成的活", null, "completed", 80, "reopen.p2.done2", "学习", dayFromNow(0)),
-      session("p1:late", "逾期的活", null, "waiting", 10, "complete.p1.late", "工作", dayFromNow(-1)),
+      session("p1:late", "逾期的活", null, "running", 10, "complete.p1.late", "工作", dayFromNow(-1)),
       session("p1:today", "今天要做的活", null, "running", 20, "complete.p1.today", "工作", dayFromNow(0)),
       session("p2:study", "学习清单的活", null, "running", 40, "complete.p2.study", "学习", dayFromNow(1)),
       session("p3:life", "生活清单的活", null, "running", 5, "complete.p3.life", "生活", dayFromNow(3)),

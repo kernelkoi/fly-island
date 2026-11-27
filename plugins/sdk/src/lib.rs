@@ -26,9 +26,11 @@ pub fn session(id: &str, title: &str, cwd: Option<&str>, status: &str, updated: 
 /// ai-agent sessions. `due` is the local calendar day ("YYYY-MM-DD") the row belongs on.
 /// `repeat` marks a repeating task; the UI owns its wording, so send no `detail` for it.
 /// `priority` is the provider's own importance (0 = none); the UI decides how to show it.
+/// `bucket` is the row's calendar group — "overdue", "today" or "future" (future covers a row
+/// without a day) — instead of borrowing the agent status word to say the same thing.
 #[allow(clippy::too_many_arguments)] // one row's fields, not a call graph; mirrors `Session`
-pub fn task(id: &str, title: &str, list: Option<&str>, status: &str, updated: i64, action: Option<&str>, detail: Option<&str>, due: Option<&str>, list_id: Option<&str>, repeat: bool, priority: Option<i64>) -> Value {
-    json!({"id":id,"title":title,"cwd":list,"listId":list_id,"status":status,"updatedAt":updated,"action":action,"detail":detail,"due":due,"kind":"task","repeat":repeat,"priority":priority})
+pub fn task(id: &str, title: &str, list: Option<&str>, status: &str, updated: i64, action: Option<&str>, detail: Option<&str>, due: Option<&str>, list_id: Option<&str>, repeat: bool, priority: Option<i64>, bucket: Option<&str>) -> Value {
+    json!({"id":id,"title":title,"cwd":list,"listId":list_id,"status":status,"updatedAt":updated,"action":action,"detail":detail,"due":due,"kind":"task","repeat":repeat,"priority":priority,"bucket":bucket})
 }
 pub fn notification(id: &str, source_id: &str, app_name: &str, icon: &str, title: &str, body: &str, action: Option<&str>) -> Value {
     json!({"id":id,"sourceId":source_id,"appName":app_name,"icon":icon,"title":title,"body":body,"receivedAt":now(),"action":action})

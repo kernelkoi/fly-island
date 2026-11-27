@@ -36,7 +36,8 @@ export function matchesDateFilter(session: PluginSession, filter: PluginDateFilt
   if (filter === "all") return true;
   const { due } = session;
   if (!due) return false;
-  if (filter === "overdue") return due < today && !session.repeat;
+  if (filter === "overdue") return session.bucket === "overdue"
+    || (session.bucket == null && due < today && !session.repeat);
   const day = workDay(due, session.repeat === true, today);
   switch (filter) {
     case "today":

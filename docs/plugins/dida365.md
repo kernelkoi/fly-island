@@ -1,7 +1,7 @@
 # 滴答清单插件需求与开发文档
 
 > 适用范围：fly-island（Fly Island）滴答清单插件 `dida365`
-> 文档版本：v2.6（2026-11-27）
+> 文档版本：v2.11（2026-11-27）
 > 定位：**需求层冻结，适配层可变**。以后重写、换语言、跟上游插件平台升级，都以本文第 2、3 节的可见行为为准；第 6 节的平台适配细节可以随时替换。
 > 代码基线：插件 manifest `0.2.0`，宿主插件 API `apiVersion 1`。
 > 称谓说明：整篇叫「需求与开发文档」（产品需求 + 实现规格）；第 1 节是「项目概要」（背景、目标、范围），第 2 节才是「需求清单」（Requirements）。「项目概要」不承担逐条验收，别把两者混用。
@@ -118,12 +118,12 @@
 - **规则**：`repeatFlag` 为真（兼容 bool / 非 0 数字 / 非空字符串）即视为重复任务。锚点**早于今天**时：归入「今天」组、不算逾期、详情写「重复任务 · 今天」、日历落在今天。锚点**等于或晚于今天**时按锚点日期正常处理，详情写「重复任务 · MM-DD 到期」。
 - **边界**：不做 RRULE 展开、不判断 `UNTIL` 是否已结束——超出本插件范围。
 - **验收**：每日重复任务锚点在 2 天前 → 出现在「今天」，详情「重复任务 · 今天」，不出现「逾期 2 天」；日历在今天的格子里。
-- **落点**：`model.rs` / `parse_repeat_flag`、`task_bucket_for_due`；`sessions.rs` / `calendar_due`；单测 `repeated_past_due_task_is_treated_as_today`、`task_rows_carry_the_calendar_day_and_repeat_anchors_move_to_today`。
+- **落点**：`model.rs` / `parse_repeat_flag`、`task_bucket_for_due`；`sessions.rs` / `calendar_due`、发布行的 `bucket`；单测 `repeated_past_due_task_is_treated_as_today`、`task_rows_carry_the_calendar_day_and_repeat_anchors_move_to_today`。
 
 ### R05 默认「到期日」的比较序列（**已达成，2026-11-17；2026-11-18 改为展示层显式比较**）
 
 - **规则**：默认模式（到期日）按以下序列比较未完成行：
-  1. **逾期组恒置顶**：`due < 今天` 且 `!repeat`，**按日期算，不看 `status`**；组内再按下面的到期日 / 修改时间比较。
+  1. **逾期组恒置顶**：插件发布的 `bucket = "overdue"`；旧快照没有 `bucket` 时才回落到 `due < 今天` 且 `!repeat`。未完成行的 `status` 一律是 `running`，不参与分组；组内再按下面的到期日 / 修改时间比较。
   2. 其余任务按 `due` 升序，**无到期日的排在有日期的之后**。
   3. 同一到期日按 `updatedAt` 降序（最近修改在前）。
   4. `kind !== "task"` 的 Agent 行排在所有任务行之后，Agent 行内部同样按所选模式比较。
@@ -287,7 +287,7 @@
   - `今天`：按今天的本地日期算；重复任务的过去锚点视为今天（R04），也算进来。
   - `明天`：明天的本地日期。
   - `未来7天`：今天起共 7 个自然日，**含今天**，即 `今天 ≤ 到期日 ≤ 今天 + 6 天`。
-  - `逾期`：到期日早于今天且**不是重复任务**；重复任务的过去锚点算今天，不算逾期。
+  - `逾期`：插件标为 `bucket = "overdue"` 的行（没有 `bucket` 的旧快照回落到「到期日早于今天且**不是重复任务**」）；重复任务的过去锚点算今天，不算逾期。
   - `全部`：不加日期条件（无到期日的行、Agent 会话行只在这里出现）。
 - **计数与进度**：清单菜单里的未完成计数不随日期标签变化（口径同 R02）；进度条按当前两个筛选后的可见行计算。
 - **快速添加**：日期标签不影响目标清单：窗口为空时仍按当前选中的清单添加（不会退回收集箱），日期仍取提交当天或日期选择器的值。
@@ -314,11 +314,13 @@ else if due == today: 桶 = today
 else:                桶 = future
 ```
 
+未完成行发布时把这个桶原样写进 `bucket`（`overdue` / `today` / `future`），`status` 一律取 `running`；宿主按 `bucket` 判定逾期，不再从日期或状态词反推。
+
 ### 4.2 排序
 
 ```
 未完成行先分等级（四种模式共用）：
-  rank = 0  逾期：due < 今天 且 !repeat（按日期算，不看 status）
+  rank = 0  逾期：bucket == "overdue"（没有 bucket 的旧行回落到 due < 今天 且 !repeat）
        = 1  任务且有到期日
        = 2  任务且无到期日
        = 3  Agent 行（kind !== "task"）
@@ -454,7 +456,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 - [ ] 六个 API 端点全部走通：`GET /project`、`GET /project/{id}/data`（收集箱用 `project/inbox/data`）、`POST /task`、`POST /project/{pid}/task/{tid}/complete`、撤销用的 `POST /task/{tid}`（带 `projectId` + `status: 0`），以及复核用的 `GET /project/{pid}/task/{tid}`。
 - [ ] 日期换算用带时区解析，没有 `slice(0,10)` 这类截断。
 - [ ] 重复任务旧锚点归今天，详情与日历同时正确。
-- [ ] 任务行带 `kind: "task"`、`due`（`YYYY-MM-DD`，宿主会校验格式）、`listId`（清单 id，供快速添加定位）、`action = complete.<pid>.<tid>`、`cwd = 清单名`；已完成行 `status: "completed"` + `action = reopen.<pid>.<tid>`。
+- [ ] 任务行带 `kind: "task"`、`due`（`YYYY-MM-DD`，宿主会校验格式）、`bucket`（`overdue` / `today` / `future`）、`listId`（清单 id，供快速添加定位）、`action = complete.<pid>.<tid>`、`cwd = 清单名`，未完成行 `status: "running"`；已完成行 `status: "completed"` + `action = reopen.<pid>.<tid>`。
 - [ ] 发布顶层带 `composer: true`，且**没有任务时也发**（否则空态下添加入口消失）。
 - [ ] `create.<日期>[.list:<id>].<标题>` 解析正确：日期合法、标题点号保留、非法输入不报错也不清空用户输入。
 - [ ] 标题上限前后端同一口径（字符或字节只能选一个）。
@@ -519,8 +521,8 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 |---|---|---|
 | 插件单元测试（13 个） | `plugins/dida365/src/tests.rs`（`cargo test --manifest-path plugins/Cargo.toml -p dida365`） | 日期换算、重复归今天、日历日与锚点、创建动作解析（含标题点号、非法日期）、完成时间只取 `status ≠ 0`、已完成行的 `reopen` 动作、200 额度优先给未完成、`reopen` id 切分、优先级 0 / 1 / 3 / 5 原样落到未完成行与已完成行 |
 | 宿主协议测试 | `src-tauri/src/plugin_host/tests.rs` | `kind` / `due` / `listId` / `priority`（0–5）/ `status: completed` 解析与校验、`composer` / `stale` 字段、重启退避 |
-| 排序单测（6 个） | `tests/unit/plugin-sort.test.mjs`（`pnpm check` 中的 `node --test`） | 到期日顺序（逾期恒置顶、同日按最近改动）、最近改动降序、清单名 + 到期、优先级高→中→低→无且同档按到期、四个档位的映射、`sortModesFor()` 在单清单时去掉「按清单」 |
-| 日期筛选单测（8 个） | `tests/unit/plugin-date-filter.test.mjs`（`pnpm check` 中的 `node --test`） | `shiftDay` 跨月 / 跨年 / DST、全部不过滤无日期与 Agent 行、今天 / 明天、未来7天含今天且第 8 天在外、逾期按日期且排除重复任务、重复任务过去锚点归今天、日期窗口只保留有日期的行 |
+| 排序单测（7 个） | `tests/unit/plugin-sort.test.mjs`（`pnpm check` 中的 `node --test`） | 到期日顺序（逾期恒置顶、同日按最近改动）、最近改动降序、清单名 + 到期、优先级高→中→低→无且同档按到期、四个档位的映射、`bucket = overdue` 优先且无 `bucket` 时回落日期、`sortModesFor()` 在单清单时去掉「按清单」 |
+| 日期筛选单测（9 个） | `tests/unit/plugin-date-filter.test.mjs`（`pnpm check` 中的 `node --test`） | `shiftDay` 跨月 / 跨年 / DST、全部不过滤无日期与 Agent 行、今天 / 明天、未来7天含今天且第 8 天在外、逾期按日期且排除重复任务、`bucket` 覆盖日期、重复任务过去锚点归今天、日期窗口只保留有日期的行 |
 | 日期标签回归（15 检查 × 中英） | `tests/regression/plugin-dates.tsx` | 五个标签的顺序与无障碍组名、默认「全部」且单选、位置在视图按钮下方与添加框上方、各窗口的行与排序（含第 7 天 / 第 8 天边界、重复任务不算逾期）、与清单筛选的「且」、窗口为空时快速添加目标清单不变、无 `due` 的插件块不显示标签、日历视图不显示 |
 | 插件页回归（102 检查 × 中英） | `tests/regression/plugin-tasks.tsx`（`pnpm test:regression plugin`） | 分组、清单筛选按钮与菜单（含未完成计数、选中后行内不再重复清单名）、勾选（完成移入分组 / 撤销 / 失败保留）、日历（完成行不计数、左方框勾选与撤销、失败提示）、快速添加（位置与目标清单）、图例、排序按钮（显示当前规则名）与四种模式、单清单范围不再提供「按清单」、恢复「全部」、日期标签的位置与日历视图隐藏、开始按钮（唯一焦点 / 切换 / 停止 / 不调插件动作 / 不自动计时 / 怀表默认 15 分钟） |
 | 优先级回归（10 检查 × 中英） | `tests/regression/plugin-priority.tsx` | 高 / 中 / 低显示短标记、「无」不画、标记是标题行内的内联小块且有带标题的 `aria-label`、默认顺序不变、切「优先级」后高在前且逾期仍置顶 |
@@ -566,8 +568,9 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | v2.6 | 2026-11-27 | 动作后不再全量 fan-out（需求不变）：完成 / 撤销用 `snapshot_from_memory` 从内存状态直接重发（0 次请求），快速添加只重取目标清单（1–2 次），内存里没有该行时才回退全量刷新。新增 `published` 记录上次发布过的未完成行，防止待复核的消失行被动作带回页面。此前每次点击要发 1 + N 个请求并可能撞上宿主 15 秒 action 超时。插件单测 12 → 13 |
 | v2.7 | 2026-11-27 | R19 与失败反馈收尾（需求不变）：消失行复核遇到 `status = 0` 时不再立即丢弃，而是按同一 3 轮上限重试，避免列表与单条接口短暂不一致时丢掉完成事件；宿主与 SDK 不再把 action 错误压成一句 `Plugin action failed`，改为显示插件自己的一行错误文案（≤300 字符，无 message 时回退通用错误），R06 的「错误原文」这才真正成立。插件单测 13 个不变，宿主新增 `action_error_message` 单测 |
 | v2.8 | 2026-11-27 | P1 打磨（需求不变）：新建全天任务的 `dueDate` 改成本机时区偏移（`local_offset` / `all_day_due`），负时区机器不再把任务落早一天；多清单拉取按 8 个线程分批并行，串行 fan-out 的等待降为最长一批；设置新增「测试连接」动作（只拉一次清单列表，token 失效立即显示插件的错误原文）；设置页对插件自己的动作错误显示原文（`pluginFailureDetail`），宿主错误仍走本地化文案；动作成功后分组底部显示「操作成功 / Done」，测试连接不再是点完没反应。插件 `0.2.1`；插件单测 13 → 14，前端补 `pluginFailureDetail` 单测 |
-| v2.10 | 2026-11-27 | P2 结构整理（零行为变化）：766 行的 `main.rs` 拆成 `main.rs`（40 行接线）+ `model.rs` / `api.rs` / `sessions.rs` / `poll.rs` / `actions.rs`，每个文件只有一个职责；函数、注释与测试逻辑原样搬迁，单测 14 个不变 |
 | v2.9 | 2026-11-27 | 设置归位（用户确认）：滴答清单的设置、动作与版本 / 权限从「AI 会话」页移到独立栏目「滴答清单」（侧栏「功能」组末尾，页面 `plugin:dida365`）。目录新增 `EXTERNAL_PLUGIN_PLACEMENTS`，给还没上架的外部插件声明 `settings`；只影响设置页位置，不增加市场卡片。新增归类单测 1 个 |
+| v2.10 | 2026-11-27 | P2 结构整理（零行为变化）：766 行的 `main.rs` 拆成 `main.rs`（40 行接线）+ `model.rs` / `api.rs` / `sessions.rs` / `poll.rs` / `actions.rs`，每个文件只有一个职责；函数、注释与测试逻辑原样搬迁，单测 14 个不变 |
+| v2.11 | 2026-11-27 | 分桶改成显式字段（需求不变）：协议 `Session.bucket`（`overdue` / `today` / `future`，宿主校验三值），插件按 4.1 的规则发布，未完成行 `status` 统一为 `running`，不再借用 Agent 的 `waiting` 表示逾期；排序与日期标签优先用 `bucket`，没有该字段的旧快照仍按日期回落。插件单测补 `bucket` 断言，宿主补校验单测，前端排序 / 标签各补 1 个用例 |
 
 ---
 
@@ -598,16 +601,16 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | `plugins/dida365/src/main.rs` | 40 | 接线：SDK 生命周期、poll / action 回调、token 读取 |
 | `plugins/dida365/src/model.rs` | 202 | 任务行与状态：`TaskEntry` / `DoneEntry` / `PluginState`、日期与时间字段解析（`parse_local_due_date` / `parse_epoch_millis`）、分桶（`task_bucket_for_due`）、`entry_from_task`、优先级（`parse_priority`） |
 | `plugins/dida365/src/api.rs` | 137 | 滴答 Open API 调用：清单与清单任务、单条复核（`fetch_task`，404/410 为终态）、完成 / 撤销 / 新建、本机时区 `dueDate`（`all_day_due`） |
-| `plugins/dida365/src/sessions.rs` | 108 | 发布行：`build_sessions` / `done_row` / `append_done` / `snapshot_from_memory`、200 / 50 额度 |
+| `plugins/dida365/src/sessions.rs` | 108 | 发布行：`build_sessions`（含 `bucket`，未完成行 `status = running`）/ `done_row` / `append_done` / `snapshot_from_memory`、200 / 50 额度 |
 | `plugins/dida365/src/poll.rs` | 212 | 轮询：每批 8 个线程并行拉取、消失任务复核（`Verified` / `verified_task`）、`republish` / `refresh` / `refresh_list` |
 | `plugins/dida365/src/actions.rs` | 119 | 动作 id 解析（`parse_create_action` / `parse_id_action`）与分发（`create` / `reopen` / `complete`、「测试连接」） |
-| `plugins/dida365/src/tests.rs` | 229 | 14 个单测（日期换算、重复归今天、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、全天日期往返本机日期、优先级档位） |
+| `plugins/dida365/src/tests.rs` | 237 | 14 个单测（日期换算、重复归今天与 `bucket`、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、全天日期往返本机日期、优先级档位） |
 | `plugins/dida365/fly-island-plugin.json` | 33 | id / 名称 / 图标 / 权限 / 设置 / 动作（`0.2.1`，动作 `test` = 测试连接） |
-| `plugins/sdk/src/lib.rs` | 313 | `task()` 构造器（含 `listId` / `repeat` / `priority`）、`run()` 生命周期（含失败缓存与 `stale()`）、`interval` 读取、发布裁剪、action 错误透传 |
-| `src-tauri/src/plugin_host/protocol.rs` | 126 | 会话字段与校验（`kind` / `due` / `listId` / `repeat` / `priority`）、`composer` 与 `stale` 字段 |
+| `plugins/sdk/src/lib.rs` | 315 | `task()` 构造器（含 `listId` / `repeat` / `priority` / `bucket`）、`run()` 生命周期（含失败缓存与 `stale()`）、`interval` 读取、发布裁剪、action 错误透传 |
+| `src-tauri/src/plugin_host/protocol.rs` | 196 | 会话字段与校验（`kind` / `due` / `listId` / `repeat` / `priority` / `bucket`）、`composer` 与 `stale` 字段 |
 | `src-tauri/src/plugin_host/manifest.rs` | 137 | manifest 的 `icon` 等字段 |
 | `src/features/plugins/PluginTasksPanel.tsx` | 283 | 插件页：分组（未完成 + 底部「已完成 N」）、视图切换、清单筛选与日期标签（「且」关系）、紧跟切换行的快速添加、工具栏的清单筛选与排序（选项按清单数裁剪）、任务行（含勾选/撤销失败提示、前端到期文案、优先级标记、开始按钮与怀表）、三空态 |
-| `src/features/plugins/pluginDateFilter.ts` | 51 | 日期窗口：`PluginDateFilter`、`shiftDay`、`matchesDateFilter`（重复任务的过去锚点归今天，未来7天含今天） |
+| `src/features/plugins/pluginDateFilter.ts` | 52 | 日期窗口：`PluginDateFilter`、`shiftDay`、`matchesDateFilter`（逾期优先看 `bucket`，重复任务的过去锚点归今天，未来7天含今天） |
 | `src/features/plugins/PluginDateChips.tsx` | 31 | 添加框上方的一排日期标签（单选、`aria-pressed`、无障碍组名） |
 | `src/features/plugins/pluginFocus.ts` | 133 | 焦点与时长模型：归一化、`pluginTaskKey`、状态判定（active / gone / unknown）、`PluginFocusController` 类型 |
 | `src/features/plugins/usePluginFocus.ts` | 113 | 焦点状态 hook：localStorage 持久化、开始 / 切换 / 停止、倒计时到时、任务消失清理、请求岛收起 |
@@ -615,7 +618,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | `src/features/plugins/PluginFocusButton.tsx` | 82 | 任务行的开始 / 停止按钮与常驻怀表（时长选择、开始一轮；正在做的行也有怀表） |
 | `src/lib/islandCollapseRequest.ts` | 25 | feature → 窗口的收起请求桥（`request` / `take` / `on`），避免 feature 依赖 `windows/` |
 | `src/features/plugins/PluginListFilter.tsx` | 139 | 工具栏清单筛选按钮与 fixed 菜单（当前清单 + 未完成数、各清单计数打勾、外部点击 / 岛折叠 / Escape 关闭） |
-| `src/features/plugins/pluginSort.ts` | 63 | 四种排序模式（`due` / `updated` / `list` / `priority`）、`sortModesFor()` 与比较器（逾期 / 有日期 / 无日期 / Agent 等级，模式内比较） |
+| `src/features/plugins/pluginSort.ts` | 65 | 四种排序模式（`due` / `updated` / `list` / `priority`）、`sortModesFor()` 与比较器（逾期优先看 `bucket`，再分有日期 / 无日期 / Agent 等级，模式内比较） |
 | `src/features/plugins/pluginPriority.ts` | 29 | 服务方优先级 → `none / low / medium / high` 与排序权重；0 / 1 / 3 / 5，其他值当「无」 |
 | `src/features/plugins/PluginSortMenu.tsx` | 138 | 工具栏排序按钮（图标 + 当前规则名）与 fixed 菜单（四项，标题 + 说明两行、打勾、外部点击 / 岛折叠 / Escape 关闭） |
 | `src/features/plugins/PluginTasksPanel.css` | 434 | 插件页与任务行样式（含切换行下的输入区、日期标签、清单筛选按钮与菜单、已完成分组、stale 与空态提示、排序按钮与菜单、开始按钮与计时） |
@@ -629,7 +632,8 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | `src/features/plugins/native/catalog.ts` | 91 | 内置与打包插件的目录声明；`EXTERNAL_PLUGIN_PLACEMENTS` 声明还没上架的外部插件（滴答清单）的设置页位置 |
 | `src/features/plugins/placement.ts` | 96 | 归类：目录声明 → 设置页 / 分组 / 独立栏目；未声明的插件按 `contributes` 回退 |
 | `src/features/plugins/pluginLineIcons.ts` | 21 | 独立栏目的侧栏线条图标（滴答清单用 `ListTodo`） |
-| `tests/unit/plugin-sort.test.mjs` | 54 | 三种排序模式与 `sortModesFor()` 的单元测试 |
+| `tests/unit/plugin-sort.test.mjs` | 87 | 三种排序模式、`bucket` 优先级与 `sortModesFor()` 的单元测试 |
+| `tests/unit/plugin-date-filter.test.mjs` | 81 | 日期窗口与 `bucket` 覆盖日期的单元测试 |
 | `tests/unit/plugin-focus.test.mjs` | 66 | 焦点存储归一化、时长范围、任务消失判定与 unknown 保留 |
 | `tests/regression/plugin-tasks.tsx` | 400 | 插件页回归（94 检查：快速添加位置与图例、清单筛选按钮与菜单计数、完成/撤销路径与失败提示、已完成分组顺序、日历左方框勾选与撤销、排序按钮与模式切换、开始按钮的唯一焦点与切换、工具栏不溢出、收集箱/重复行、未配置/stale mock 插件） |
 | `docs/plugins/api.md` | — | `composer` / `listId` / `create.*` 动作的对外契约（第 52、61、63 行） |

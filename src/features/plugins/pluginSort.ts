@@ -16,12 +16,14 @@ export function sortModesFor(listCount: number) {
   return PLUGIN_SORT_MODES.filter((mode) => mode !== "list" || listCount > 1);
 }
 
-/** 0 = overdue (due day before today and not repeating; judged by date, not the status word),
- *  1 = a task with a day, 2 = a task without one, 3 = an agent session. Overdue always tops,
- *  undated tasks always trail dated ones, and agent rows always come after the tasks — the same
- *  frame in every mode, so switching the mode never hides overdue work. */
+/** 0 = overdue, 1 = a task with a day, 2 = a task without one, 3 = an agent session. Overdue
+ *  always tops, undated tasks always trail dated ones, and agent rows always come after the
+ *  tasks — the same frame in every mode, so switching the mode never hides overdue work. The
+ *  plugin says a row is overdue with `bucket`, and the day is the fallback for an old row. */
+const overdue = (session: PluginSession, today: string) =>
+  session.bucket === "overdue" || (session.bucket == null && session.due != null && session.due < today && !session.repeat);
 const rankOf = (session: PluginSession, today: string) => {
-  if (session.due != null && session.due < today && !session.repeat) return 0;
+  if (overdue(session, today)) return 0;
   if (session.kind !== "task") return 3;
   return session.due ? 1 : 2;
 };

@@ -59,6 +59,15 @@ fn validates_manifest_and_protocol() {
         let row = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"priority":priority}]});
         assert!(protocol::parse_publish(&publish(row), &m).is_err());
     }
+    // The calendar group is a field of its own; an open row says "running" whatever its group.
+    for bucket in ["overdue", "today", "future"] {
+        let row = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"bucket":bucket}]});
+        assert!(protocol::parse_publish(&publish(row), &m).unwrap().is_some());
+    }
+    for bucket in ["", "waiting", "Overdue"] {
+        let row = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"bucket":bucket}]});
+        assert!(protocol::parse_publish(&publish(row), &m).is_err());
+    }
     let mut restricted = m.clone(); restricted.contributes.clear();
     let n = json!({"notifications":[{"id":"n","sourceId":"test","appName":"test","icon":"plugin","title":"test","body":"test","receivedAt":1,"action":null}]});
     assert!(protocol::parse_publish(&publish(n), &restricted).is_err());

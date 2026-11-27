@@ -26,6 +26,17 @@ test("due keeps overdue on top, then due day, then undated, then agent rows", ()
   assert.equal(ids(sort(rows, "due")), "late,repeat,today,same-new,same-old,nodue,agent");
 });
 
+test("the plugin's bucket ranks overdue, and a row without one falls back to its day", () => {
+  const rows = [
+    task("marked", "Marked overdue", "2026-11-18", 1, { bucket: "overdue" }),
+    task("moved", "Moved to today", "2026-11-17", 2, { bucket: "today" }),
+    task("today", "Today", "2026-11-18", 3, { bucket: "today" }),
+  ];
+  assert.equal(ids(sort(rows, "due")), "marked,moved,today");
+  // An older plugin row without a bucket keeps the date reading.
+  assert.equal(ids(sort([task("dated", "Dated", "2026-11-17", 1)], "due")), "dated");
+});
+
 test("updated reads the rest newest first, the same frame around it", () => {
   const rows = [
     task("nodue", "No day", null, 99),

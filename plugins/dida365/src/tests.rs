@@ -75,6 +75,14 @@ fn task_rows_carry_the_calendar_day_and_repeat_anchors_move_to_today() {
     assert_eq!(repeated["repeat"], json!(true));
     assert_eq!(overdue["repeat"], json!(false));
     assert_eq!(repeated["detail"], json!(null));
+    // The calendar group is explicit; an open row never borrows the agent's status words.
+    assert_eq!(repeated["bucket"], json!("today"));
+    assert_eq!(overdue["bucket"], json!("overdue"));
+    assert_eq!(repeated["status"], json!("running"));
+    assert_eq!(overdue["status"], json!("running"));
+    let someday = &build_sessions(&[open_task("t3", "以后", None, 3)], ROW_CAP)[0];
+    assert_eq!(someday["bucket"], json!("future"));
+    assert_eq!(someday["due"], json!(null));
 }
 
 #[test]

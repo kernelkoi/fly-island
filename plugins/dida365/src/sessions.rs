@@ -34,11 +34,9 @@ pub(crate) fn build_sessions(tasks: &[TaskEntry], cap: usize) -> Vec<Value> {
     let today = Local::now().date_naive();
     for task in ordered.into_iter().take(cap) {
         let action_id = format!("complete.{}.{}", task.project_id, task.id);
-        let status = if matches!(task_bucket_for_due(task.due_date, task.repeat_flag), "overdue") {
-            "waiting"
-        } else {
-            "running"
-        };
+        // The calendar group is its own field; `status` stays the open/completed lifecycle word
+        // instead of borrowing the agent's "waiting" to mean overdue.
+        let bucket = task_bucket_for_due(task.due_date, task.repeat_flag);
         // A repeated task's past anchor means it belongs on today, not on its anchor day.
         // The due wording is the UI's job (in the user's language), so no detail line here.
         let calendar_due = task.due_date.map(|due| if task.repeat_flag && due < today { today } else { due });
@@ -46,7 +44,7 @@ pub(crate) fn build_sessions(tasks: &[TaskEntry], cap: usize) -> Vec<Value> {
             &format!("{}:{}", task.project_id, task.id),
             &task.title,
             list_name(&task.project_id, &task.project_name).as_deref(),
-            status,
+            "running",
             task.modified_at,
             Some(action_id.as_str()),
             None,
@@ -54,6 +52,7 @@ pub(crate) fn build_sessions(tasks: &[TaskEntry], cap: usize) -> Vec<Value> {
             Some(task.project_id.as_str()),
             task.repeat_flag,
             Some(task.priority),
+            Some(bucket),
         ));
     }
     sessions
@@ -74,6 +73,7 @@ pub(crate) fn done_row(entry: &DoneEntry) -> Value {
         Some(entry.project_id.as_str()),
         entry.repeat_flag,
         Some(entry.priority),
+        None,
     )
 }
 

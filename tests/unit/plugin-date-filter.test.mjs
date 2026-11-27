@@ -54,6 +54,15 @@ test("overdue is judged by the date, never the status word", () => {
   assert.equal(passes(task("undated", null), "overdue"), false);
 });
 
+test("the plugin's bucket decides overdue; a row without one falls back to its day", () => {
+  // The provider's own group wins over the day text: a repeating row already moved to today
+  // with a past anchor stays out of overdue, and a row the plugin marks overdue tops the list
+  // even if its day reads today.
+  assert.equal(passes(task("moved", "2026-11-16", { bucket: "today" }), "overdue"), false);
+  assert.equal(passes(task("marked", today, { bucket: "overdue" }), "overdue"), true);
+  assert.equal(passes(task("future", "2026-11-19", { bucket: "future" }), "overdue"), false);
+});
+
 test("a repeating row's past anchor is worked today, not overdue", () => {
   const repeat = task("repeat", "2026-11-16", { repeat: true });
   assert.equal(passes(repeat, "overdue"), false);
