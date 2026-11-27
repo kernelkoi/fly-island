@@ -42,14 +42,6 @@ export type AgentText = {
     thisComputer: string;
     /** Heading of sessions without a known folder, when grouped by project. */
     noProject: string;
-    /** The Agent page's arrange menu in the island header: the order and the headings. */
-    arrange: {
-      label: string;
-      sort: string;
-      group: string;
-      sortOptions: { status: string; recent: string; firstSeen: string };
-      groupOptions: { computer: string; project: string; none: string };
-    };
     removed: string;
     undo: string;
     /** A finished session whose reply ends on the "your turn" marker. */
@@ -94,6 +86,11 @@ export type AgentText = {
     left: (window: string, left: number, used: number) => string;
     /** Which ring is which, first on the card. */
     ringsLegend: string;
+    weekly: string;
+    modelQuota: string;
+    ringHint: (window: string, left: number) => string;
+    ringUnknown: (window: string) => string;
+    balanceHint: (balance: string) => string;
     /** The rings' accessible name: the agent's usage, then each window's summary. */
     rings: (label: string, windows: string[]) => string;
   };
@@ -172,13 +169,6 @@ export const zhCN: AgentText = {
     remoteOnly: (host) => `没找到连着 ${host} 的终端或编辑器窗口`,
     thisComputer: "本机",
     noProject: "未知项目",
-    arrange: {
-      label: "排列会话",
-      sort: "排序",
-      group: "分组",
-      sortOptions: { status: "状态优先", recent: "最近活动", firstSeen: "首次出现" },
-      groupOptions: { computer: "按电脑", project: "按项目", none: "不分组" },
-    },
     removed: "已归档",
     undo: "撤销",
     yourTurn: "等你回复",
@@ -229,6 +219,11 @@ export const zhCN: AgentText = {
     fromAntigravity: "来自 Antigravity 本机额度",
     left: (window, left, used) => `${window} 剩余 ${left}%（已用 ${used}%）`,
     ringsLegend: "外圈 5 小时 · 内圈 7 天 · 显示剩余额度",
+    weekly: "每周",
+    modelQuota: "模型额度",
+    ringHint: (window, left) => `${window} · 剩余 ${left}%`,
+    ringUnknown: (window) => `${window} · 暂无数据`,
+    balanceHint: (balance) => `余额 · ${balance}`,
     rings: (label, windows) => [label, ...windows].join("；"),
   },
   approval: {
@@ -305,13 +300,6 @@ export const en: AgentText = {
     remoteOnly: (host) => `No terminal or editor window connected to ${host}`,
     thisComputer: "This computer",
     noProject: "No project",
-    arrange: {
-      label: "Arrange sessions",
-      sort: "Sort",
-      group: "Group",
-      sortOptions: { status: "Status", recent: "Recent", firstSeen: "First seen" },
-      groupOptions: { computer: "Computer", project: "Project", none: "None" },
-    },
     removed: "Archived",
     undo: "Undo",
     yourTurn: "Your turn",
@@ -361,6 +349,11 @@ export const en: AgentText = {
     fromAntigravity: "from Antigravity's quota on this computer",
     left: (window, left, used) => `${window} ${left}% left (${used}% used)`,
     ringsLegend: "Outer ring 5h · inner ring 7d · showing what is left",
+    weekly: "Weekly",
+    modelQuota: "Model quota",
+    ringHint: (window, left) => `${window} · ${left}% left`,
+    ringUnknown: (window) => `${window} · Unavailable`,
+    balanceHint: (balance) => `Balance · ${balance}`,
     rings: (label, windows) => [label, ...windows].join("; "),
   },
   approval: {

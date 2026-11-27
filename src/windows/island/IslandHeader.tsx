@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from "react";
+import { useCallback } from "react";
 import { usePointerReorder } from "../../components/reorder/usePointerReorder";
 import { PageButtonContent } from "../../features/appearance/PageButtonContent";
 import { PAGE_ICONS } from "../../features/appearance/pageIcons";
@@ -44,8 +44,6 @@ type IslandHeaderProps = {
   /** False when minimizing tucks the island to the top edge instead. */
   minimizesToTray: boolean;
   onMinimize: () => void;
-  /** Buttons of the open page, first among the window actions. */
-  pageActions?: ReactNode;
 };
 
 function IslandHeaderAgent({ style, enabled, active, state, statusLabel, onOpen }: {
@@ -122,7 +120,6 @@ export function IslandHeader({
   onResetPosition,
   minimizesToTray,
   onMinimize,
-  pageActions,
 }: IslandHeaderProps) {
   const t = useTranslation();
   const { locale } = useLocale();
@@ -314,7 +311,6 @@ export function IslandHeader({
       {!labeled && collapseTarget}
 
       <div className="window-actions">
-        {pageActions}
         <button
           className={`icon-button island-settings-button${page === "settings" ? " island-settings-button--active" : ""}`}
           type="button"

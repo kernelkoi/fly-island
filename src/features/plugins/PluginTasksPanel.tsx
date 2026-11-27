@@ -181,8 +181,7 @@ function PluginBlock({ id, name, quota, composer, sessions, stale, configured }:
       <div className="plugin-tasks__toolbar">
         <TodoViewSwitch pageMode={view} onSelect={setView} views={["today", "calendar"]} />
         <div className="plugin-tasks__aside">
-          {/* The block already names the plugin; the ring's fallback label would repeat it. */}
-          {quota.length > 0 && <PluginQuotaRings items={quota} secondaryLabel={false} />}
+          {quota.length > 0 && <PluginQuotaRings items={quota} />}
           {/* The list filter names the list in view and carries its open count, so the chips row
               and the per-row list name both had nothing left to say. */}
           {!isCalendar && lists.length > 1 && (

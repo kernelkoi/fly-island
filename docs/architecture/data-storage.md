@@ -102,3 +102,11 @@ Rust `weather/` 只按显式城市搜索或已保存坐标请求 Open-Meteo；�
 ## 日历标记、MiniMax Code 与设备电量
 
 日历标记沿用内置插件的安装/停用记录。设备的音频绑定写入 WebView localStorage 的 fly-island-device-battery，设备读数及低电量状态仅在内存。MiniMax 可选密钥走宿主凭据管理器，额度和会话只读 MiniMax 本机数据。审批接入由用户在插件设置中显式启用，仅修改 ~/.minimax/hooks.json 内本插件登记的处理器，临时审批保存在 %LOCALAPPDATA%/fly-island-minimax/approvals.json。
+
+## Antigravity 额度缓存（2026-11-26）
+
+- Tauri `app_cache_dir()` 下 `antigravity-quota.json`（原子写入用 `.tmp`）保存 Antigravity 最后成功的模型额度：`version: 1`、`updatedAt`、`plan`、`models: [{ name, used, resetsAt }]`。只保存额度与时间，不保存 CSRF token、账号或对话。读取上限 64 KiB，超过 7 天不恢复；保留原始时间，前端过滤已重置窗口。属于可丢弃缓存，不进入配置备份。
+
+## 插件市场作者头像缓存（2026-11-26）
+
+插件市场作者头像从 GitHub 头像 CDN 加载，每个 URL 的并发请求合并，解码后保存为当前 WebView 内存中的 blob URL；离开、重新进入市场时直接复用。初次请求使用 HTTP 缓存且不发送凭据或 referrer，失败显示姓名首字母，下次进入可重试。不新增 localStorage key。
