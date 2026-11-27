@@ -10,7 +10,7 @@ export type SettingsPluginsText = {
   developer: string; developerMode: string; develop: string; unavailable: string; index: string; directory: string; load: string; secret: string;
   status: Record<string, string>; permission: Record<string, string>;
   guide: string; checkUpdate: string;
-  guideHint: string; readGuide: string; openGuideFailed: string; runAction: string; actionDone: string; openSettings: string;
+  guideHint: string; readGuide: string; openGuideFailed: string; runAction: string; actionDone: string; actions: string; openSettings: string;
   market: SettingsPluginMarketText;
 };
 
@@ -30,7 +30,7 @@ export type SettingsPluginMarketText = {
 
 export const zhCN: SettingsPluginsText = {
   clockWeather: clockWeatherZh,
-  checkUpdate: "检查更新", runAction: "执行", actionDone: "操作成功", openSettings: "打开设置", guide: "插件开发规范", guideHint: "插件是什么、怎么改造小岛源码、提交 PR 要附的演示和信息，以及审核上线流程。",
+  checkUpdate: "检查更新", runAction: "执行", actionDone: "操作成功", actions: "操作", openSettings: "打开设置", guide: "插件开发规范", guideHint: "插件是什么、怎么改造小岛源码、提交 PR 要附的演示和信息，以及审核上线流程。",
   readGuide: "查看规范", openGuideFailed: "没能打开开发规范，请再试一次。",
   empty: "暂无插件", installed: "已安装", available: "可安装", install: "安装", update: "更新",
   uninstall: "卸载", enabled: "启用", permissions: "权限", retry: "刷新", save: "保存",
@@ -89,7 +89,7 @@ export const zhCN: SettingsPluginsText = {
 
 export const en: SettingsPluginsText = {
   clockWeather: clockWeatherEn,
-  checkUpdate: "Check for updates", runAction: "Run", actionDone: "Done", openSettings: "Open settings", guide: "Plugin development guide", guideHint: "What a plugin is, how to change the island's source, the demo and details a PR needs, and how review and release work.",
+  checkUpdate: "Check for updates", runAction: "Run", actionDone: "Done", actions: "Actions", openSettings: "Open settings", guide: "Plugin development guide", guideHint: "What a plugin is, how to change the island's source, the demo and details a PR needs, and how review and release work.",
   readGuide: "Read guide", openGuideFailed: "Could not open the guide. Please try again.",
   empty: "No plugins yet", installed: "Installed", available: "Available", install: "Install", update: "Update",
   uninstall: "Uninstall", enabled: "Enable", permissions: "Permissions", retry: "Refresh", save: "Save",

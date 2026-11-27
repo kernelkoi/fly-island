@@ -33,8 +33,12 @@ for (const key of [NATIVE_PLUGINS_KEY, DISABLED_NATIVE_PLUGINS_KEY, "fly-island-
 
 const t = TRANSLATIONS[locale].settings;
 const market = t.plugins.market;
+const testAction = { id: "check", label: { "zh-CN": "检查配置", en: "Check setup" } };
 const manifests = [eyeCare, minimax, deviceBattery].map((raw) => ({
   actions: [], ...raw,
+  // Eye care gets one action and no panel here only, to check that a standalone page keeps
+  // actions and settings in cards of their own.
+  ...(raw.id === "eye-care" ? { actions: [testAction], contributes: [] } : {}),
   settings: ("settings" in raw ? raw.settings as Record<string, unknown>[] : []).map((setting) => ({ options: [], ...setting })),
 })) as unknown as PluginManifest[];
 const installed: Record<string, InstalledPlugin> = {};
@@ -124,6 +128,22 @@ if (!query.has("test")) {
     && one(".settings-sidebar__item[data-category='plugin:eye-care']")?.getAttribute("aria-current") === "page",
     "Open settings on the card goes to the plugin's page with its settings");
   check(fits(one(".editor-panel")!) && fits(group("eye-care")!), "The plugin's page does not overflow");
+  const intro = one(".editor-panel .plugin-group__intro");
+  check(intro?.textContent?.includes(market.items["eye-care"].name)
+    && intro.textContent?.includes(eyeCareManifest.description[locale])
+    && intro.textContent?.includes(`v${eyeCareManifest.version}`)
+    && intro.textContent?.includes(t.plugins.status.stopped)
+    && appIcon(intro.querySelector(".plugin-group__intro-icon img"), "eye-care"),
+    "A standalone page opens with the plugin's mark, pitch, version and state");
+  const standalone = groups();
+  check(standalone.length === 2 && !standalone[0].querySelector("h2")
+    && standalone[1].querySelector("h2")?.textContent === t.plugins.actions
+    && standalone[1].textContent?.includes(testAction.label[locale])
+    && !standalone[0].textContent?.includes(testAction.label[locale]),
+    "A standalone page keeps its settings and actions in separate cards");
+  const permissionDetails = one<HTMLDetailsElement>(".editor-panel .plugin-group__permission-details");
+  check(permissionDetails?.open === false && permissionDetails.textContent?.includes(t.plugins.permission["desktop-windows"]),
+    "Permissions stay folded away under the cards");
 
   installed["eye-care"].enabled = false;
   await act(async () => { await emit(PLUGINS_EVENT); });

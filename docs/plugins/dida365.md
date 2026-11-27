@@ -194,7 +194,8 @@
 - **现状（已达成，此处更正）**：SDK 在 initialize 时读取 `settings["interval"]` 并 clamp 到 1–3600 秒（`plugins/sdk/src/lib.rs:202`），覆盖 `main()` 里传入的 180 秒默认值。之前文档误判此项不生效，以此为准。
 - **验收**：设 1 分钟，在滴答里改一条任务标题，≤75 秒内岛上更新；设 10 分钟，同样操作 3 分钟内不更新。
 - **落点**：`fly-island-plugin.json` 的 `settings`；`plugins/sdk/src/lib.rs:202`。
-- **位置**（2026-11-27 用户确认）：设置在独立栏目「滴答清单」里，排在侧栏「功能」组末尾（页面 `plugin:dida365`），不再落在「AI 会话」页；设置、动作按钮、版本 / 状态 / 权限同页。声明在 `features/plugins/native/catalog.ts` 的 `EXTERNAL_PLUGIN_PLACEMENTS`，侧栏用 `ListTodo` 线条图标。
+- **位置**（2026-11-27 用户确认）：设置在独立栏目「滴答清单」里，排在侧栏「功能」组末尾（页面 `plugin:dida365`），不再落在「AI 会话」页。声明在 `features/plugins/native/catalog.ts` 的 `EXTERNAL_PLUGIN_PLACEMENTS`，侧栏用 `ListTodo` 线条图标。
+- **版式**（2026-11-28 用户确认）：页首是插件简介（图标、名称、清单里的一句话说明、版本与运行状态）；设置和「测试连接」分成两张卡片，动作结果只显示在动作卡片下方；权限从最后一行改成卡片下方的折叠项，默认收起。
 
 ### R14 规模与截断
 
@@ -555,6 +556,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | 日期标签回归（15 检查 × 中英） | `tests/regression/plugin-dates.tsx` | 五个标签的顺序与无障碍组名、默认「全部」且单选、位置在视图按钮下方与添加框上方、各窗口的行与排序（含第 7 天 / 第 8 天边界、重复任务不算逾期）、与清单筛选的「且」、窗口为空时快速添加目标清单不变、无 `due` 的插件块不显示标签、日历视图不显示 |
 | 插件页回归（114 检查 × 中英） | `tests/regression/plugin-tasks.tsx`（`pnpm test:regression plugin`） | 分组、清单筛选按钮与菜单（含未完成计数、选中后行内不再重复清单名）、勾选（完成移入分组 / 撤销 / 失败保留）、日历（完成行不计数、左方框勾选与撤销、失败提示）、快速添加（位置与目标清单）、图例、排序按钮（显示当前规则名）与四种模式、单清单范围不再提供「按清单」、恢复「全部」、日期标签的位置与日历视图隐藏、开始按钮（唯一焦点 / 切换 / 停止 / 不调插件动作 / 不自动计时 / 怀表默认 15 分钟）、改到期日（按钮无障碍名、可选过去日期、写入命名空间动作、清除、失败回退与行内错误、已完成行没有） |
 | 优先级回归（10 检查 × 中英） | `tests/regression/plugin-priority.tsx` | 高 / 中 / 低显示短标记、「无」不画、标记是标题行内的内联小块且有带标题的 `aria-label`、默认顺序不变、切「优先级」后高在前且逾期仍置顶 |
+| 设置归类回归（32 检查 × 中英） | `tests/regression/plugins-placement.tsx` | 插件设置放在声明页面 / 独立栏目、不堆在插件页；独立栏目页首为插件简介（图标、名称、说明、版本与状态），设置与动作分卡片，权限默认折叠 |
 | 插件焦点回归（8 检查） | `tests/regression/plugin-focus.tsx` | 点开始后岛收起并显示标题；正在做的行仍有怀表；怀表开始一轮后标题旁出现倒计时 |
 | 插件焦点单测（6 个） | `tests/unit/plugin-focus.test.mjs` | 损坏的存储回退、标题与时长归一化、时长范围、完成/删除/停用判定为 gone、未发布与 stale 保持 unknown、焦点 key |
 | 折叠岛回归（48 / 54 检查） | `tests/regression/collapsed-message-animation.tsx` | 插件焦点计时时折叠岛显示标题与倒计时，停止后恢复 |
@@ -601,6 +603,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | v2.10 | 2026-11-27 | P2 结构整理（零行为变化）：766 行的 `main.rs` 拆成 `main.rs`（40 行接线）+ `model.rs` / `api.rs` / `sessions.rs` / `poll.rs` / `actions.rs`，每个文件只有一个职责；函数、注释与测试逻辑原样搬迁，单测 14 个不变 |
 | v2.11 | 2026-11-27 | 分桶改成显式字段（需求不变）：协议 `Session.bucket`（`overdue` / `today` / `future`，宿主校验三值），插件按 4.1 的规则发布，未完成行 `status` 统一为 `running`，不再借用 Agent 的 `waiting` 表示逾期；排序与日期标签优先用 `bucket`，没有该字段的旧快照仍按日期回落。插件单测补 `bucket` 断言，宿主补校验单测，前端排序 / 标签各补 1 个用例 |
 | v2.12 | 2026-11-28 | 新增 R24 行内改到期日（P2 剩余项）：未完成行右侧加日期按钮，复用待办页月历，允许过去日期与「清除日期」，写回 `POST /task/{tid}` 后立即重发快照；协议新增行级动作命名空间 `actionPrefixes`（前缀必须以 `.` 结尾、最多 8 个），宿主按前缀授权，避免为每天各发一个 action id 顶爆 256 KB 报文上限；插件 `0.2.2`；文档「明确不做」从「不做任何任务编辑」改为「只做改到期日」。插件单测 14 → 15，宿主协议 / 授权补测，日期选择单测补 2 个，插件页回归 102 → 114 检查 |
+| v2.13 | 2026-11-28 | 独立栏目版式（用户确认）：页首改为插件简介（图标、名称、清单里的一句话说明、版本与运行状态），设置与「测试连接」拆成两张卡片，动作结果只显示在动作卡片下方；权限从最后一行改成卡片下方的折叠项，默认收起。共用页面 / 分组版式不变（仍为单卡片最后一行的版本 / 状态 / 权限）。`PluginSettingsGroup.tsx` 80 → 121 行，设置归类回归页补 3 项断言 |
 
 ---
 
@@ -661,7 +664,8 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | `src/i18n/sections/plugins.ts` | 142 | 插件页中英文案（含图例、`addTaskFor` 占位、`titleTooLong`、到期详情、收集箱、三空态、`completedGroup` / `reopenTask`、`sortMode` / `sortModes`、`changeDueDate` / `noDueDate`） |
 | `src/features/todos/TodoDatePicker.tsx` / `TodoDatePopover.tsx` / `datePickerCalendar.ts` | 90 / 97 / 37 | 与内置待办共用的日期选择：可选的按钮文案与无障碍名、允许过去日期、选日映射（新建 → 今天及更早归当前清单；改期 → 原样保留 / 空值清除） |
 | `src/features/plugins/errors.ts` | 26 | 失败分流：市场 / 安装错误码（`pluginFailureCode`）与插件自己的动作错误（`pluginFailureDetail`，宿主错误不误当原文） |
-| `src/windows/settings/PluginSettingsGroup.tsx` | 80 | 插件设置分组：设置行、动作按钮（含「测试连接」）、版本 / 状态 / 权限与错误显示 |
+| `src/windows/settings/PluginSettingsGroup.tsx` | 121 | 插件设置分组：独立栏目用页首简介 + 设置 / 动作两张卡片 + 折叠权限；共用页面仍是单卡片（设置、动作、版本 / 状态 / 权限与错误显示） |
+| `src/windows/settings/PluginSettingsGroup.css` | 109 | 插件设置分组的简介、运行状态、折叠权限与权限短标签样式 |
 | `src/features/plugins/native/catalog.ts` | 91 | 内置与打包插件的目录声明；`EXTERNAL_PLUGIN_PLACEMENTS` 声明还没上架的外部插件（滴答清单）的设置页位置 |
 | `src/features/plugins/placement.ts` | 96 | 归类：目录声明 → 设置页 / 分组 / 独立栏目；未声明的插件按 `contributes` 回退 |
 | `src/features/plugins/pluginLineIcons.ts` | 21 | 独立栏目的侧栏线条图标（滴答清单用 `ListTodo`） |

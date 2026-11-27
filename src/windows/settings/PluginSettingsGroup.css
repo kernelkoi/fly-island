@@ -1,3 +1,100 @@
+/* A standalone page opens with the plugin itself: mark, one-line pitch and state. */
+.plugin-group__intro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  min-width: 0;
+  padding: 0 var(--space-xs);
+}
+
+.plugin-group__intro-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--color-white-a04);
+  border: 1px solid var(--color-white-a06);
+  border-radius: var(--corner-md);
+  corner-shape: var(--corner-shape);
+}
+
+.plugin-group__intro-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plugin-group__intro-name {
+  color: var(--color-text);
+  font-size: calc(14px * var(--island-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.plugin-group__intro-description {
+  margin: 0;
+  color: var(--color-text-subtle);
+  font-size: calc(12px * var(--island-font-scale, 1));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.plugin-group__intro-meta {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.plugin-group__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-subtle);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1.4;
+}
+
+.plugin-group__status-dot {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.plugin-group__status--running { color: color-mix(in srgb, var(--color-success) 70%, var(--color-text)); }
+.plugin-group__status--failed { color: var(--color-error-text); }
+.plugin-group__status--starting,
+.plugin-group__status--restarting { color: var(--color-accent); }
+
+.plugin-group__version {
+  color: var(--color-text-subtle);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1.4;
+}
+
+.plugin-group__permission-details {
+  padding: 0 var(--space-xs);
+  color: var(--color-text-subtle);
+  font-size: calc(12px * var(--island-font-scale, 1));
+}
+
+.plugin-group__permission-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.plugin-group__permission-details[open] > summary {
+  margin-bottom: var(--space-sm);
+}
+
 .plugin-group__permissions {
   display: flex;
   flex-wrap: wrap;
