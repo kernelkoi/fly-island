@@ -220,7 +220,7 @@
 - **日期**：待办视图默认今天，且**在提交那一刻取当天**（窗口开着跨过午夜，不会写到前一天）；日历视图固定使用选中日期。
 - **目标清单**：跟随当前清单筛选。筛了某清单且该清单的行带 `listId` → 动作 `create.<日期>.list:<listId>.<标题>`；选「全部」或没有 `listId` → `create.<日期>.<标题>`，由插件落到默认收集箱。
 - **交互**：回车提交（中文输入法组合态的回车不提交）；空标题不提交；标题做 trim；成功后清空输入；失败保留文本供重试。
-- **插件侧**：`POST /open/v1/task`，body `{ "title", "dueDate": "<日期>T00:00:00+0000", "isAllDay": true, "projectId"? }`；成功后**只重取目标清单一次**并立刻 `publish` 快照，新行不用等下一轮轮询。
+- **插件侧**：`POST /open/v1/task`，body `{ "title", "dueDate": "<日期>T00:00:00±HHMM", "isAllDay": true, "projectId"? }`；偏移取**本机时区**（如 `+0800`），不能写死 `+0000`（在负时区机器上会落早一天）；成功后**只重取目标清单一次**并立刻 `publish` 快照，新行不用等下一轮轮询。
 - **长度与转义**：标题上限必须前后端一致；标题里的点号要保留（`create.<日期>.<标题>` 只按前两个点切分，`list:` 形式再多切一层）。
 - **验收**：选「全部」添加 → 进收集箱；筛「计划」添加 → 进计划；跨午夜后添加 → 落到新一天；标题含「.」正常；超长中文标题有明确提示且输入不被清空。
 - **落点**：`src/features/plugins/PluginQuickAdd.tsx`；`main.rs` / `parse_create_action`、`create_task`；协议 `Contributions.composer`、`Session.listId`；SDK `task(..., list_id)`；宿主 `service.rs` / `action`（`composer` 已发布时放行 `create.*`，否则前端提交必然报 `Unknown plugin action`）。
@@ -366,7 +366,7 @@ create.<YYYY-MM-DD>.list:<清单id>.<标题>
 
 - 前两个点是有含义的分隔符，**标题里其余的点原样保留**；`list:` 形式多切一层。
 - 日期必须是合法 `YYYY-MM-DD`；标题 trim 后非空。
-- 新建一律是全天任务：`dueDate = "<日期>T00:00:00+0000"`、`isAllDay = true`。
+- 新建一律是全天任务：`dueDate = "<日期>T00:00:00±HHMM"`（本机时区偏移，见 `local_offset` / `all_day_due`）、`isAllDay = true`。
 - 带 `list:<清单id>` 落到该清单；不带则落到收集箱。
 - 成功后插件立即重发快照，让新行当轮出现。
 - **长度限制前后端必须同一口径**：200 个字符（前端 `[...title].length`，插件 `chars().count()`）。
@@ -564,6 +564,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | v2.5 | 2026-11-27 | R19 实现修正（需求不变）：消失任务的单条复核把 `404` / `410` 当作终态（任务已删除或移走，直接忘记，不再每轮重查），网络 / 解析失败最多重试 3 轮；此前删除的任务会被当作临时失败永久保留，累计超过 20 条后占满每轮复核名额，「已完成 N」会静默失效。新增 `verified_completion` 与复核判定单测，插件单测 11 → 12 |
 | v2.6 | 2026-11-27 | 动作后不再全量 fan-out（需求不变）：完成 / 撤销用 `snapshot_from_memory` 从内存状态直接重发（0 次请求），快速添加只重取目标清单（1–2 次），内存里没有该行时才回退全量刷新。新增 `published` 记录上次发布过的未完成行，防止待复核的消失行被动作带回页面。此前每次点击要发 1 + N 个请求并可能撞上宿主 15 秒 action 超时。插件单测 12 → 13 |
 | v2.7 | 2026-11-27 | R19 与失败反馈收尾（需求不变）：消失行复核遇到 `status = 0` 时不再立即丢弃，而是按同一 3 轮上限重试，避免列表与单条接口短暂不一致时丢掉完成事件；宿主与 SDK 不再把 action 错误压成一句 `Plugin action failed`，改为显示插件自己的一行错误文案（≤300 字符，无 message 时回退通用错误），R06 的「错误原文」这才真正成立。插件单测 13 个不变，宿主新增 `action_error_message` 单测 |
+| v2.8 | 2026-11-27 | P1 打磨（需求不变）：新建全天任务的 `dueDate` 改成本机时区偏移（`local_offset` / `all_day_due`），负时区机器不再把任务落早一天；多清单拉取按 8 个线程分批并行，串行 fan-out 的等待降为最长一批；设置新增「测试连接」动作（只拉一次清单列表，token 失效立即显示插件的错误原文）；设置页对插件自己的动作错误显示原文（`pluginFailureDetail`），宿主错误仍走本地化文案；动作成功后分组底部显示「操作成功 / Done」，测试连接不再是点完没反应。插件 `0.2.1`；插件单测 13 → 14，前端补 `pluginFailureDetail` 单测 |
 
 ---
 
@@ -575,7 +576,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | 端点 1 | `GET /open/v1/project` — 清单列表，`kind` 区分 TASK / NOTE |
 | 端点 2 | `GET /open/v1/project/{id}/data` — `{ project, tasks, columns }` |
 | 端点 3 | `POST /open/v1/project/{projectId}/task/{taskId}/complete` — 完成写操作 |
-| 端点 4 | `POST /open/v1/task` — 新建任务；body `{title, dueDate: "<日期>T00:00:00+0000", isAllDay, projectId?}`，不带 `projectId` 进收集箱 |
+| 端点 4 | `POST /open/v1/task` — 新建任务；body `{title, dueDate: "<日期>T00:00:00±HHMM", isAllDay, projectId?}`，不带 `projectId` 进收集箱；`dueDate` 是时间点，偏移要写本机时区（写死 `+0000` 在负时区会落早一天） |
 | 端点 5 | `POST /open/v1/task/{tid}` — 通用更新，**撤销完成**用它：body `{id, projectId, status: 0}`，缺 `projectId` 返回 404 `task not found`（实测 200，任务回到 `/data`） |
 | 端点 6 | `GET /open/v1/project/{pid}/task/{tid}` — 单条任务，**能读到已完成**（`status: 2` + 真实 `completedTime`），是唯一可靠来源 |
 | 已完成批量端点 | **不存在**：`GET /project/{id}/task/completed` → 404 `task not found: completed`（路由把它当 taskId）、POST → 405；`/project/{id}/completed`、`/completedTask`、`/task/completedByDay`、`/completed/list` 全 404；`/open/v2/...` → 403；`/data` 加 `status=2` / `completed=true` / `includeCompleted=true` / `from&to` 参数被忽略，始终只回 `status 0` |
@@ -591,10 +592,10 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `plugins/dida365/src/main.rs` | 725 | 拉取、收集箱、分桶、发布、快速创建（`parse_create_action` / `create_task`）、完成与撤销动作、动作后的本地快照（`snapshot_from_memory` / `refresh_list` / `refresh`）、已完成分组复核（`PluginState` / `fetch_task` / `verified_task` / `done_row`）、消失任务的跨轮复核与优先级解析（`parse_priority`） |
-| `plugins/dida365/src/tests.rs` | 208 | 13 个单测（日期换算、重复归今天、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、优先级档位） |
-| `plugins/dida365/fly-island-plugin.json` | 31 | id / 名称 / 图标 / 权限 / 设置（`0.2.0`） |
-| `plugins/sdk/src/lib.rs` | 303 | `task()` 构造器（含 `listId` / `repeat` / `priority`）、`run()` 生命周期（含失败缓存与 `stale()`）、`interval` 读取、发布裁剪 |
+| `plugins/dida365/src/main.rs` | 766 | 拉取（每批 8 个线程并行）、收集箱、分桶、发布、快速创建（`parse_create_action` / `create_task` / `all_day_due`）、完成与撤销动作、动作后的本地快照（`snapshot_from_memory` / `refresh_list` / `refresh`）、已完成分组复核（`PluginState` / `fetch_task` / `verified_task` / `done_row`）、消失任务的跨轮复核、「测试连接」动作与优先级解析（`parse_priority`） |
+| `plugins/dida365/src/tests.rs` | 221 | 14 个单测（日期换算、重复归今天、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、全天日期往返本机日期、优先级档位） |
+| `plugins/dida365/fly-island-plugin.json` | 33 | id / 名称 / 图标 / 权限 / 设置 / 动作（`0.2.1`，动作 `test` = 测试连接） |
+| `plugins/sdk/src/lib.rs` | 313 | `task()` 构造器（含 `listId` / `repeat` / `priority`）、`run()` 生命周期（含失败缓存与 `stale()`）、`interval` 读取、发布裁剪、action 错误透传 |
 | `src-tauri/src/plugin_host/protocol.rs` | 126 | 会话字段与校验（`kind` / `due` / `listId` / `repeat` / `priority`）、`composer` 与 `stale` 字段 |
 | `src-tauri/src/plugin_host/manifest.rs` | 137 | manifest 的 `icon` 等字段 |
 | `src/features/plugins/PluginTasksPanel.tsx` | 283 | 插件页：分组（未完成 + 底部「已完成 N」）、视图切换、清单筛选与日期标签（「且」关系）、紧跟切换行的快速添加、工具栏的清单筛选与排序（选项按清单数裁剪）、任务行（含勾选/撤销失败提示、前端到期文案、优先级标记、开始按钮与怀表）、三空态 |
@@ -615,6 +616,8 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | `src/features/plugins/PluginCalendar.tsx` | 178 | 日历视图：月历、图例、右栏「N 条待办」与快速添加（跟随清单筛选）；行首方框即勾选（可完成 / 撤销），完成行划线但不计数 |
 | `src/features/plugins/PluginIcon.tsx` | 13 | `ticktick` → 官方 SVG |
 | `src/i18n/sections/plugins.ts` | 118 | 插件页中英文案（含图例、`addTaskFor` 占位、`titleTooLong`、到期详情、收集箱、三空态、`completedGroup` / `reopenTask`、`sortMode` / `sortModes`） |
+| `src/features/plugins/errors.ts` | 26 | 失败分流：市场 / 安装错误码（`pluginFailureCode`）与插件自己的动作错误（`pluginFailureDetail`，宿主错误不误当原文） |
+| `src/windows/settings/PluginSettingsGroup.tsx` | 77 | 插件设置分组：设置行、动作按钮（含「测试连接」）、版本 / 状态 / 权限与错误显示 |
 | `tests/unit/plugin-sort.test.mjs` | 54 | 三种排序模式与 `sortModesFor()` 的单元测试 |
 | `tests/unit/plugin-focus.test.mjs` | 66 | 焦点存储归一化、时长范围、任务消失判定与 unknown 保留 |
 | `tests/regression/plugin-tasks.tsx` | 400 | 插件页回归（94 检查：快速添加位置与图例、清单筛选按钮与菜单计数、完成/撤销路径与失败提示、已完成分组顺序、日历左方框勾选与撤销、排序按钮与模式切换、开始按钮的唯一焦点与切换、工具栏不溢出、收集箱/重复行、未配置/stale mock 插件） |

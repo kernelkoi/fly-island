@@ -6,7 +6,7 @@ import { SettingsRow } from "../../components/settings/SettingsRow";
 import { PluginIcon } from "../../features/plugins/PluginIcon";
 import { PluginSettingRow } from "../../features/plugins/PluginSettingRow";
 import { runPluginAction, setPluginSetting, type InstalledPlugin } from "../../features/plugins/api";
-import { pluginFailureCode } from "../../features/plugins/errors";
+import { pluginFailureCode, pluginFailureDetail } from "../../features/plugins/errors";
 import type { NativePluginId } from "../../features/plugins/native/catalog";
 import { pluginsOnPage, type PlacedPlugin, type PluginPageCategory } from "../../features/plugins/placement.ts";
 import { refreshPlugins, usePlugins } from "../../features/plugins/usePlugins";
@@ -25,6 +25,7 @@ export function ExternalPluginGroup({ plugin, external, page }: { plugin: Placed
   const name = usePluginName()(plugin);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const { manifest } = external;
   const home = plugin.category === page;
   // A plugin with its own island page offers its actions there.
@@ -32,13 +33,14 @@ export function ExternalPluginGroup({ plugin, external, page }: { plugin: Placed
   const settings = home ? manifest.settings : [];
   // A group that would only repeat the version belongs to the plugin's main page.
   if (!home && actions.length === 0) return null;
-  const perform = async (action: () => Promise<unknown>, block: boolean) => {
+  const perform = async (action: () => Promise<unknown>, block: boolean, done?: string) => {
     if (block) setBusy(true);
     setError("");
-    try { await action(); await refreshPlugins(); }
+    setNotice("");
+    try { await action(); await refreshPlugins(); if (done) setNotice(done); }
     catch (failure) {
       const code = pluginFailureCode(failure);
-      setError(code ? t.market.failure[code] : t.market.operationFailed(name));
+      setError(code ? t.market.failure[code] : pluginFailureDetail(failure) ?? t.market.operationFailed(name));
     }
     finally { if (block) setBusy(false); }
   };
@@ -46,14 +48,15 @@ export function ExternalPluginGroup({ plugin, external, page }: { plugin: Placed
   const titled = !plugin.standalone;
   return <SettingsGroup anchor={plugin.id}
     title={titled ? name : undefined} icon={titled ? <PluginIcon id={plugin.id} size={16} panelIcon={manifest.panel?.icon} /> : undefined}
-    footer={error ? <span className="plugins-settings__error" role="alert">{error}</span> : undefined}>
+    footer={error ? <span className="plugins-settings__error" role="alert">{error}</span>
+      : notice ? <span className="plugins-settings__error" role="status">{notice}</span> : undefined}>
     {settings.map((setting) => <PluginSettingRow
       key={`${plugin.id}/${setting.key}/${setting.type === "number" ? "number" : JSON.stringify(external.settings[setting.key])}`}
       setting={setting} value={external.settings[setting.key] ?? setting.default} disabled={busy}
       onSave={(value) => { void perform(() => setPluginSetting(plugin.id, setting.key, value), setting.type !== "number"); }} />)}
     {actions.map((action) => <SettingsRow key={action.id} title={action.label[locale]} control={
       <SettingsLinkButton disabled={busy} ariaLabel={action.label[locale]}
-        onClick={() => { void perform(() => runPluginAction(plugin.id, action.id), true); }}>{t.runAction}</SettingsLinkButton>} />)}
+        onClick={() => { void perform(() => runPluginAction(plugin.id, action.id), true, t.actionDone); }}>{t.runAction}</SettingsLinkButton>} />)}
     {home && <SettingsRow description={`${manifest.version} · ${t.status[live[plugin.id]?.status ?? "stopped"] ?? ""}`}
       title={<span className="plugin-group__permissions"><ShieldCheck size={14} aria-hidden="true" />{t.permissions}</span>}>
       <div className="plugin-group__permissions">{manifest.permissions.map((permission) =>

@@ -109,6 +109,18 @@ fn create_action_keeps_dots_in_the_title_and_rejects_bad_dates() {
 }
 
 #[test]
+fn all_day_due_round_trips_to_the_same_local_date() {
+    let date = NaiveDate::from_ymd_opt(2026, 11, 20).unwrap();
+    let due = all_day_due(date);
+    assert_eq!(parse_local_due_date(&due), Some(date));
+    // 偏移必须是本机时区的 ±HHMM，而不是写死 +0000。
+    let tail = due.split_once("T00:00:00").unwrap().1;
+    assert_eq!(tail.len(), 5);
+    assert!(tail.starts_with('+') || tail.starts_with('-'));
+    assert!(tail[1..].bytes().all(|byte| byte.is_ascii_digit()));
+}
+
+#[test]
 fn only_tasks_the_provider_reports_as_done_get_a_completion_time() {
     // `status != 0` 即已完成；列表接口通常不返回这类行，但真返回时不能让它们消失。
     let completed = json!({
@@ -141,7 +153,8 @@ fn a_verified_lookup_counts_only_a_completion_the_provider_reports_for_today() {
 }
 
 #[test]
-fn done_rows_follow_the_open_rows_and_undo_instead_of_completing() {    let mut sessions = build_sessions(&[open_task("t1", "没做的活", None, 1)], ROW_CAP);
+fn done_rows_follow_the_open_rows_and_undo_instead_of_completing() {
+    let mut sessions = build_sessions(&[open_task("t1", "没做的活", None, 1)], ROW_CAP);
     append_done(&mut sessions, &[done_entry("p1:t9", "刚做完的活", 1_700_000_000_000)]);
     assert_eq!(sessions.len(), 2);
     assert_eq!(sessions[0]["id"], json!("p1:t1"));

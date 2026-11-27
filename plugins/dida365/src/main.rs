@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, NaiveTime, Offset, TimeZone};
 use fly_island_plugin_sdk::{empty, json, publish, run, stale, task as task_row, Value};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -125,6 +125,26 @@ fn parse_local_due_date(raw: &str) -> Option<NaiveDate> {
         return Some(dt.with_timezone(&Local).date_naive());
     }
     None
+}
+
+/// The `+HHMM` offset at `date`'s local midnight, so an all-day task keeps its calendar day on
+/// either side of UTC. A hard-coded `+0000` would write 00:00 UTC, which is the previous day west
+/// of UTC once the provider turns the instant back into local time.
+fn local_offset(date: NaiveDate) -> String {
+    let offset = Local
+        .from_local_datetime(&date.and_time(NaiveTime::MIN))
+        .single()
+        .map(|dt| dt.offset().fix())
+        .unwrap_or_else(|| Local::now().offset().fix());
+    let seconds = offset.local_minus_utc();
+    let sign = if seconds < 0 { '-' } else { '+' };
+    let minutes = seconds.unsigned_abs() / 60;
+    format!("{sign}{:02}{:02}", minutes / 60, minutes % 60)
+}
+
+/// The `dueDate` string for a new all-day task due on `date`.
+fn all_day_due(date: NaiveDate) -> String {
+    format!("{date}T00:00:00{}", local_offset(date))
 }
 
 fn task_bucket_for_due(due_date: Option<NaiveDate>, repeat_flag: bool) -> &'static str {
@@ -435,7 +455,7 @@ fn parse_id_action<'a>(action_id: &'a str, prefix: &str) -> Option<(&'a str, &'a
 fn create_task(token: &str, date: NaiveDate, title: &str, project_id: Option<&str>) -> Result<Value, String> {
     let mut body = json!({
         "title": title,
-        "dueDate": format!("{}T00:00:00+0000", date),
+        "dueDate": all_day_due(date),
         "isAllDay": true,
     });
     if let Some(project_id) = project_id {
@@ -489,24 +509,39 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
         projects.push(json!({"id": "inbox", "name": "", "kind": "TASK"}));
     }
     let today = Local::now().date_naive();
+    // One request per list, each up to 10s: fetched in small parallel windows instead of one long
+    // serial line, so a poll with many lists cannot stall the plugin on a slow list.
+    const FETCH_CONCURRENCY: usize = 8;
+    let lists: Vec<(String, String)> = projects
+        .into_iter()
+        .filter(|project| {
+            let id = project["id"].as_str().unwrap_or_default();
+            !id.is_empty() && !project["kind"].as_str().is_some_and(|kind| !kind.eq_ignore_ascii_case("task"))
+        })
+        .map(|project| {
+            let id = project["id"].as_str().unwrap_or_default().to_owned();
+            let name = project["name"].as_str().unwrap_or("TickTick").to_owned();
+            (id, name)
+        })
+        .collect();
     let mut open = Vec::new();
     let mut reported_done = Vec::new();
-
-    for project in projects {
-        let project_id = project["id"].as_str().unwrap_or_default();
-        if project_id.is_empty() {
-            continue;
-        }
-        if project["kind"].as_str().is_some_and(|kind| !kind.eq_ignore_ascii_case("task")) {
-            continue;
-        }
-        let project_name = project["name"].as_str().unwrap_or("TickTick").to_owned();
-        for entry in fetch_project_tasks(token, project_id, &project_name).unwrap_or_default() {
-            match entry.completed_at {
-                Some(at) => reported_done.push((entry, at)),
-                None => open.push(entry),
+    for chunk in lists.chunks(FETCH_CONCURRENCY) {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk.iter().map(|(id, name)| {
+                let id = id.clone();
+                let name = name.clone();
+                scope.spawn(move || fetch_project_tasks(token, &id, &name).unwrap_or_default())
+            }).collect();
+            for handle in handles {
+                for entry in handle.join().unwrap_or_default() {
+                    match entry.completed_at {
+                        Some(at) => reported_done.push((entry, at)),
+                        None => open.push(entry),
+                    }
+                }
             }
-        }
+        });
     }
 
     let open_keys: HashSet<String> = open.iter().map(|entry| format!("{}:{}", entry.project_id, entry.id)).collect();
@@ -653,6 +688,12 @@ fn main() {
         let Some(token) = settings["token"].as_str().map(str::trim).filter(|value| !value.is_empty()) else {
             return Err("TickTick API token is missing".to_owned());
         };
+        if action_id == "test" {
+            // The settings "test connection" button: one real request tells the user whether the
+            // token still works, without waiting for a poll or a failed checkbox.
+            fetch_projects(token)?;
+            return Ok(json!(true));
+        }
         let mut state = state.borrow_mut();
         if let Some((date, project_id, title)) = parse_create_action(action_id) {
             create_task(token, date, title, project_id)?;

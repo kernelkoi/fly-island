@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pluginFailureCode } from "../../src/features/plugins/errors.ts";
+import { pluginFailureCode, pluginFailureDetail } from "../../src/features/plugins/errors.ts";
 
 test("market errors show only recognized IPC codes, not paths or URLs", () => {
   assert.equal(pluginFailureCode("plugin_index_unavailable"), "plugin_index_unavailable");
@@ -17,4 +17,15 @@ test("download failures keep their own codes", () => {
     assert.equal(pluginFailureCode(code), code);
   }
   assert.equal(pluginFailureCode("error decoding response body"), undefined);
+});
+
+test("a plugin's own action error is shown, host failures stay localized", () => {
+  assert.equal(pluginFailureDetail(new Error("Token expired; sign in again")), "Token expired; sign in again");
+  assert.equal(pluginFailureDetail("  401 Unauthorized  "), "401 Unauthorized");
+  for (const message of ["Plugin action failed", "Plugin action timeout", "Plugin is stopped", "Invalid secret"]) {
+    assert.equal(pluginFailureDetail(new Error(message)), undefined);
+  }
+  assert.equal(pluginFailureDetail(new Error("   ")), undefined);
+  assert.equal(pluginFailureDetail(undefined), undefined);
+  assert.equal(pluginFailureDetail({ toString: () => "401" }), undefined);
 });

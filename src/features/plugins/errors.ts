@@ -11,3 +11,16 @@ export function pluginFailureCode(error: unknown): PluginFailure | undefined {
   const code = error instanceof Error ? error.message : error;
   return PLUGIN_FAILURES.find((value) => value === code);
 }
+
+// Host-generated failures keep their localized wording; a plugin's own action error (already
+// bounded by the host to one short line) is shown as-is so "401" reads "401", not "failed".
+const HOST_FAILURES = new Set([
+  "Plugin action timeout", "Plugin action failed", "Unknown plugin action",
+  "Plugin is stopped", "Plugin is busy or stopped", "Plugin exited",
+  "Invalid plugin setting value", "Unknown plugin setting", "Invalid secret",
+]);
+
+export function pluginFailureDetail(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message.trim() : typeof error === "string" ? error.trim() : "";
+  return message && !HOST_FAILURES.has(message) ? message : undefined;
+}

@@ -3,7 +3,7 @@
   "name": { "zh-CN": "滴答清单", "en": "TickTick" },
   "icon": "ticktick",
   "description": { "zh-CN": "待办任务列表、按清单添加与勾选完成", "en": "Task list, per-list quick add and completion" },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "apiVersion": 1,
   "runtime": { "command": "dida365.exe" },
   "permissions": ["network", "sessions"],
@@ -27,5 +27,7 @@
       ]
     }
   ],
-  "actions": []
+  "actions": [
+    { "id": "test", "label": { "zh-CN": "测试连接", "en": "Test connection" } }
+  ]
 }
