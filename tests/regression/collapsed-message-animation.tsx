@@ -17,6 +17,7 @@ import type { MailSnapshot } from "../../src/features/messages/mail/api";
 import type { MessageSource } from "../../src/features/messages/messagePreview";
 import type { MediaState } from "../../src/features/media/api";
 import type { AgentSession } from "../../src/features/agent-status/session";
+import type { TodoTimer } from "../../src/features/todos/timer";
 import { MAIL_OTP_ENABLED } from "../../src/features/releaseFlags.ts";
 
 Object.assign(globalThis, { isTauri: true, IS_REACT_ACT_ENVIRONMENT: true });
@@ -82,6 +83,7 @@ let changeAgentCount: (count: number) => void;
 let changeAgentsEnabled: (enabled: boolean) => void;
 let changeAutoCopy: (enabled: boolean) => void;
 let changeNotice: (notice: NoticeSize | null) => void;
+let changeFocus: (timer: TodoTimer | null) => void;
 let openedPage: string | null = null;
 
 function Fixture() {
@@ -96,7 +98,8 @@ function Fixture() {
   const [agentCount, setAgentCount] = useState(0);
   const [agentsEnabled, setAgentsEnabled] = useState(true);
   const [autoCopyOtp, setAutoCopyOtp] = useState(true);
-  changeAutoCopy = setAutoCopyOtp;
+  const [focusTimer, setFocusTimer] = useState<TodoTimer | null>(null);
+  changeAutoCopy = setAutoCopyOtp; changeFocus = setFocusTimer;
   changeAgentCount = setAgentCount; changeAgentsEnabled = setAgentsEnabled;
   const canPreview = mode === "collapsed" && !tucked;
   const qq = useQQNotifications(canPreview);
@@ -110,7 +113,7 @@ function Fixture() {
   return <div className={`stage${pixel ? " stage--font-pixel" : ""}`} style={{ "--collapsed-island-width": `${notice?.width ?? width}px`, ...(notice ? { "--collapsed-island-height": `${notice.height}px` } : {}) } as CSSProperties}>
     <IslandShell qqNotifications={qq} wechatReminders={wechat} qqMail={qqMail} preview={preview} notice={notice} batteryDisplay="percent" batteryReadoutStyle="inverted"
       mode={mode} page="todo" expandedHeight={306} isTucked={tucked} tuckStyle="edge" topEdgeShoulders={false} positionLocked={false} isDetached={true} showTitle={title} brandText={title ? "fly-island" : null} pendingText={null}
-      showCollapsedText={true} collapsedTaskTitle={task ?? `剩余${count}个待办`} collapsedTodoCount={null} agentSession={agent} activeAgentSessionCount={agentCount}
+      showCollapsedText={true} collapsedTaskTitle={task ?? `剩余${count}个待办`} collapsedTodoCount={null} agentSession={agent} activeAgentSessionCount={agentCount} pluginFocusTimer={focusTimer}
       collapsedItem={agent ? "agent" : "todo"} collapsedLayout={["pulse", "text", "mail", "shelf", "music", "agents"]} collapsedCover={null} lyricsSettings={{ lyricsFolder: "", lyricsOnline: false, lyricsOffsetMs: 0 }}
       pageOrder={["todo", "music", "clipboard", "shelf"]} onPageOrderChange={() => {}}
       pageButtonStyle="capsule"
@@ -211,6 +214,11 @@ async function runChecks() {
     await act(async () => button().click());
     await settle();
     check(incoming().textContent?.includes("fly-island") && incoming().textContent?.includes("完成今日设计评审"), "像素字体和标题开启时恢复当前专注任务");
+    await act(async () => changeFocus({ todoId: "dida365/x", endsAt: Date.now() + 900_000, durationMinutes: 15, notified: false }));
+    check(document.querySelector(".island__active-task-title")?.textContent === "完成今日设计评审"
+      && /^\d{2}:\d{2}$/.test(document.querySelector(".island__timer-pill")?.textContent ?? ""), "插件任务的计时在折叠岛显示标题和倒计时");
+    await act(async () => changeFocus(null));
+    check(!document.querySelector(".island__timer-pill") && incoming().textContent?.includes("完成今日设计评审"), "停止插件任务后折叠岛不再显示倒计时");
     await notify("qq");
     await act(async () => changeMode("expanded"));
     check(summary().children.length === 1 && !summary().querySelector(".island-message-preview"), "展开立即清除消息动画和离场内容");

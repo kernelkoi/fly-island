@@ -38,6 +38,8 @@ export type IslandFeatures = {
   wecom?: boolean;
   /** The AI Agent switch; off hides the Agent page. */
   agents: boolean;
+  /** An enabled plugin publishes sessions, so the plugins page exists (release flag aside). */
+  plugins?: boolean;
   /** Translation is on and set to open as an island page rather than its own window. */
   translation: boolean;
   battery?: boolean;
@@ -45,7 +47,7 @@ export type IslandFeatures = {
   pluginPages?: readonly PluginPageInfo[];
 };
 
-const PAGE_ORDER: BuiltinPage[] = ["todo", "music", "clipboard", "shelf", "qq", "agents", "translation", "battery"];
+const PAGE_ORDER: BuiltinPage[] = ["todo", "music", "clipboard", "shelf", "qq", "agents", "plugins", "translation", "battery"];
 
 /** The page id of a plugin's page; the plugin id is namespaced so it can never meet a built-in. */
 export function pluginPageId(id: string): PluginPage {
@@ -83,6 +85,7 @@ export function pluginPagesFrom(installed: Record<string, InstalledPlugin>, live
 
 export function isPageEnabled(page: IslandPage, features: IslandFeatures): boolean {
   if (page === "settings") return true;
+  if (page === "plugins") return PLUGIN_RUNTIME_ENABLED && features.plugins === true;
   if (isPluginPage(page)) return features.pluginPages?.some((info) => info.page === page) ?? false;
   return page === "qq"
     ? features.qq || features.wechat || features.qqMail || features.telegram === true || features.dingtalk === true || features.feishu === true || features.wecom === true

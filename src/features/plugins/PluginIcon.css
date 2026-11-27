@@ -5,3 +5,11 @@
   color: color-mix(in srgb, var(--plugin-tint) 82%, var(--color-text));
   background: color-mix(in srgb, var(--plugin-tint) 16%, var(--color-white-a06));
 }
+
+/* A brand tile, rounded like the other app tiles on the island. */
+.plugin-icon {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 3px;
+}

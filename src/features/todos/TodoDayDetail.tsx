@@ -10,6 +10,7 @@ export function TodoDayDetail({
   calendarNote,
   summary,
   composer,
+  footer,
   children,
 }: {
   date: string;
@@ -17,6 +18,8 @@ export function TodoDayDetail({
   calendarNote?: string;
   summary?: string;
   composer?: ReactNode;
+  /** A quiet line under the body, e.g. a count legend that stays outside the task list. */
+  footer?: ReactNode;
   children: ReactNode[];
 }) {
   const t = useTranslation();
@@ -58,6 +61,7 @@ export function TodoDayDetail({
       >
         {hasTodos ? children : <p className="todo-day-detail__empty">{t.notebook.noTodosOnDay}</p>}
       </div>
+      {footer}
     </section>
   );
 }

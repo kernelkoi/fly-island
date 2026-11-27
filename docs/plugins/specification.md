@@ -46,6 +46,7 @@ Use UTF-8 JSON in `fly-island-plugin.json`, at most **65,536 bytes**. Every mani
 | `panel` | 否 / No | 声明 panel 贡献时必需：`{icon: string}`，仅接受宿主预置图标 / Required when contributing panel: host icon selection only |
 | `runtime` | 是 / Yes | 仅含 `command: string`。/ Object containing only `command: string`. |
 | `runtime.command` | 是 / Yes | 包内相对路径，以小写 `.exe` 结尾，子目录用 `/`；无参数、不经 shell。规范化后必须在插件目录内。/ Relative packaged path ending in lowercase `.exe`; use `/` for subdirectories. No arguments or shell; resolved executable must remain inside the plugin directory. |
+| `icon` | 否 / No | 可选，小写字母、数字、`-`，最多 32 字节；只能是宿主内置标识（当前有 `ticktick`），宿主画图标，未知或不填回退拼图。插件不能自带图片、SVG 或样式。/ Optional, lowercase letters, digits and `-`, at most 32 bytes; must be a name in the host's built-in set (currently `ticktick`). The host draws it and falls back to the puzzle icon when absent or unknown. Plugins cannot ship images, SVG or styles. |
 | `permissions` | 是 / Yes | 下表允许值的字符串数组；不需要权限时也写 `[]`。/ String array of allowed values below; use `[]` if none. |
 | `contributes` | 是 / Yes | `quota`、`sessions`、`notifications`、`panel` 的数组；每项必须同时存在于 permissions。/ Array of `quota`, `sessions`, `notifications`, `panel`; each requires the matching permission. |
 | `settings` | 否 / No | `Setting[]`，缺省 `[]`。/ `Setting[]`, default `[]`. |

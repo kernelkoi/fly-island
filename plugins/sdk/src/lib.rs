@@ -9,11 +9,26 @@ static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new
 
 pub fn now() -> i64 { SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64) }
 pub fn empty() -> Value { json!({"quota":[],"sessions":[],"notifications":[]}) }
+/// An empty publish flagged as the last known data: the refresh failed, so the UI keeps the
+/// previous rows and says so instead of reading the emptiness as "no tasks".
+pub fn stale(data: Value) -> Value {
+    let mut data = data;
+    if let Some(object) = data.as_object_mut() { object.insert("stale".into(), json!(true)); }
+    data
+}
 pub fn quota(id: &str, label: &str, percent: Option<f64>, balance: Option<String>, reset: Option<i64>) -> Value {
     json!({"id":id,"label":label,"remainingPercent":percent.map(|v| v.clamp(0.0,100.0)),"secondaryPercent":null,"balance":balance,"resetsAt":reset,"updatedAt":now()})
 }
-pub fn session(id: &str, title: &str, cwd: Option<&str>, status: &str, updated: i64, action: Option<&str>) -> Value {
-    json!({"id":id,"title":title,"cwd":cwd,"status":status,"updatedAt":updated,"action":action})
+pub fn session(id: &str, title: &str, cwd: Option<&str>, status: &str, updated: i64, action: Option<&str>, detail: Option<&str>) -> Value {
+    json!({"id":id,"title":title,"cwd":cwd,"status":status,"updatedAt":updated,"action":action,"detail":detail})
+}
+/// A to-do-like row: the plugin page lists it instead of the Agent page, which only takes
+/// ai-agent sessions. `due` is the local calendar day ("YYYY-MM-DD") the row belongs on.
+/// `repeat` marks a repeating task; the UI owns its wording, so send no `detail` for it.
+/// `priority` is the provider's own importance (0 = none); the UI decides how to show it.
+#[allow(clippy::too_many_arguments)] // one row's fields, not a call graph; mirrors `Session`
+pub fn task(id: &str, title: &str, list: Option<&str>, status: &str, updated: i64, action: Option<&str>, detail: Option<&str>, due: Option<&str>, list_id: Option<&str>, repeat: bool, priority: Option<i64>) -> Value {
+    json!({"id":id,"title":title,"cwd":list,"listId":list_id,"status":status,"updatedAt":updated,"action":action,"detail":detail,"due":due,"kind":"task","repeat":repeat,"priority":priority})
 }
 pub fn notification(id: &str, source_id: &str, app_name: &str, icon: &str, title: &str, body: &str, action: Option<&str>) -> Value {
     json!({"id":id,"sourceId":source_id,"appName":app_name,"icon":icon,"title":title,"body":body,"receivedAt":now(),"action":action})
@@ -45,7 +60,7 @@ fn bounded_contributions(mut data: Value) -> Value {
     // Count bounds alone do not bound UTF-8 payload size. Preserve the newest entries.
     while data.to_string().len() > MAX_LINE - 128 {
         let field = ["sessions", "notifications", "quota"].into_iter()
-            .max_by_key(|key| data[*key].as_array().map_or(0, Vec::len));
+            .max_by_key(|key| data.get(*key).and_then(Value::as_array).map_or(0, Vec::len));
         let Some(items) = field.and_then(|key| data.get_mut(key)).and_then(Value::as_array_mut).filter(|items| !items.is_empty()) else { return empty(); };
         items.pop();
     }
@@ -183,6 +198,9 @@ pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value,
     let mut settings = Value::Null;
     let mut ready = false;
     let mut next = Instant::now();
+    // The last publish the poll produced; a failed refresh resends it with a stale flag rather
+    // than wiping the rows on screen, which the UI would mistake for "no tasks".
+    let mut last = empty();
     loop {
         let wait = if ready { next.saturating_duration_since(Instant::now()) } else { Duration::from_secs(10) };
         match rx.recv_timeout(wait) {
@@ -214,8 +232,9 @@ pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
         if ready && Instant::now() >= next {
-            let params = match poll(&settings) { Ok(v) => v, Err(_) => { eprintln!("Plugin refresh unavailable; check local sign-in"); empty() } };
-            publish(params).map_err(|e| e.to_string())?;
+            let params = match poll(&settings) { Ok(v) => v, Err(_) => { eprintln!("Plugin refresh unavailable; check local sign-in"); stale(last.clone()) } };
+            publish(params.clone()).map_err(|e| e.to_string())?;
+            last = params;
             next = Instant::now() + interval;
         }
     }
@@ -248,15 +267,18 @@ mod tests {
 
     #[test]
     fn histories_are_deduplicated_sorted_and_bounded_by_count_and_bytes() {
-        let sessions: Vec<_> = (0..500).map(|i| session(&format!("s{i}"), &"a".repeat(4000), None, "completed", i, None)).collect();
+        let sessions: Vec<_> = (0..500).map(|i| session(&format!("s{i}"), &"a".repeat(4000), None, "completed", i, None, None)).collect();
         let data = bounded_contributions(json!({"quota":[],"sessions":sessions,"notifications":[]}));
         let items = data["sessions"].as_array().unwrap();
         assert!(items.len() < 200 && !items.is_empty());
         assert_eq!(items[0]["updatedAt"], 499);
         assert!(data.to_string().len() < MAX_LINE - 128);
-        let duplicate = session("same", "hello", None, "completed", 1, None);
+        let duplicate = session("same", "hello", None, "completed", 1, None, None);
         let data = bounded_contributions(json!({"sessions":[duplicate,duplicate]}));
         assert_eq!(data["sessions"].as_array().unwrap().len(), 1);
+        // An unpublished contribution must stay absent; a `null` would fail the host's schema.
+        let data = bounded_contributions(json!({"sessions":[]}));
+        assert!(data.get("quota").is_none() && data.get("notifications").is_none());
     }
 
     #[test]

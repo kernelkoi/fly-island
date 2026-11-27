@@ -73,6 +73,8 @@ type IslandShellProps = {
   showCollapsedText: boolean;
   collapsedTaskTitle: string | null;
   todoTimer?: TodoTimer | null;
+  /** The countdown of the plugin task being worked on, shown beside its title. */
+  pluginFocusTimer?: TodoTimer | null;
   todoRotation?: TodoRotationDisplay | null;
   collapsedTodoCount: number | null;
   /** Which of the agent, the lyric line and a todo the collapsed island's text shows, if any. */
@@ -166,6 +168,7 @@ export function IslandShell({
   showCollapsedText,
   collapsedTaskTitle,
   todoTimer = null,
+  pluginFocusTimer = null,
   todoRotation = null,
   collapsedTodoCount,
   collapsedItem,
@@ -319,6 +322,7 @@ export function IslandShell({
             collapsedLabel={collapsedLabel}
             collapsedTaskTitle={collapsedTaskTitle}
             todoTimer={todoTimer}
+            pluginFocusTimer={pluginFocusTimer}
             todoRotation={todoRotation}
             collapsedTodoCount={collapsedTodoCount}
             collapsedItem={collapsedItem}

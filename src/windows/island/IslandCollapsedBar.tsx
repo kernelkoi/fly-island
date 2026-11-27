@@ -59,6 +59,8 @@ type IslandCollapsedBarProps = {
   collapsedLabel: string;
   collapsedTaskTitle: string | null;
   todoTimer?: TodoTimer | null;
+  /** The countdown of the plugin task being worked on, shown beside its title. */
+  pluginFocusTimer?: TodoTimer | null;
   todoRotation?: TodoRotationDisplay | null;
   collapsedTodoCount: number | null;
   /** Which of the agent, the lyric line and a todo the text shows (Settings → Appearance), if any. */
@@ -117,6 +119,7 @@ export function IslandCollapsedBar({
   collapsedLabel,
   collapsedTaskTitle,
   todoTimer = null,
+  pluginFocusTimer = null,
   todoRotation = null,
   collapsedTodoCount,
   collapsedItem,
@@ -266,6 +269,17 @@ export function IslandCollapsedBar({
                   <span className="island__active-task-title">{collapsedTaskTitle}</span>
                   <span className="island__timer-pill">
                     {todoTimer.notified ? t.todo.timeUp : <TodoCountdown endsAt={todoTimer.endsAt} warning={isTodoTimerEndingSoon(todoTimer)} />}
+                  </span>
+                </>
+              </span>
+            ) : pluginFocusTimer ? (
+              /* The plugin task being worked on: its title and the focus round beside it. */
+              <span className="island__active-task island__active-task--timed" key={collapsedTaskTitle}>
+                {showTitle ? "· " : ""}
+                <>
+                  <span className="island__active-task-title">{collapsedTaskTitle}</span>
+                  <span className="island__timer-pill">
+                    {pluginFocusTimer.notified ? t.todo.timeUp : <TodoCountdown endsAt={pluginFocusTimer.endsAt} />}
                   </span>
                 </>
               </span>

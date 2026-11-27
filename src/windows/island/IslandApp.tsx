@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { visibleCollapsedSlots } from "../../features/appearance/collapsedLayout";
 // First: the message panels it loads bring CSS that must come before the page panels' and the shell's.
 import { useLowBatteryAlert } from "../../features/device-battery/useLowBatteryAlert";
@@ -46,6 +46,8 @@ import { useIslandHover } from "./useIslandHover";
 import { useIdleUpdateInstall } from "../../features/updater/useIdleUpdateInstall";
 import { useIslandTranslation } from "./useIslandTranslation";
 import { useMessageView } from "./useMessageView";
+import { usePluginFocusState } from "../../features/plugins/PluginFocusContext";
+import { onIslandCollapseRequest, takeIslandCollapseRequest } from "../../lib/islandCollapseRequest";
 import { useSettingsPageHeight } from "./useSettingsPageHeight";
 import { useIslandPickerOpen } from "../../lib/islandPicker";
 import { TODO_DATE_PICKER_EXPANDED_ISLAND_HEIGHT } from "./layout";
@@ -82,6 +84,12 @@ export function IslandApp() {
     canPopUp: !game.quiet && mode === "collapsed" && !isTucked,
   });
   const { todos, activeTodoId, activeTodoIds, timer, timers, todoPageMode, todoListHeight, notebookProps } = useIslandTodos({ settings, navigation, quiet: game.quiet });
+  // The plugin task being worked on; the collapsed island names it.
+  const pluginFocus = usePluginFocusState();
+  // A task was started on the plugin page: the island folds away and shows it on its collapsed face.
+  useEffect(() => onIslandCollapseRequest(() => {
+    if (takeIslandCollapseRequest()) collapseIsland();
+  }), [collapseIsland]);
 
   const battery = useIslandBattery(settings.batteryHistoryEnabled, mode, page, isTucked);
   const songPlaying = settings.musicEnabled && media.mediaState.playbackStatus === "playing" && Boolean(media.mediaState.title);
@@ -115,7 +123,7 @@ export function IslandApp() {
     mode === "collapsed" && !isTucked && !game.quiet && !hasMessagePreview && quotaAlert === null,
   );
   const collapsed = mode === "collapsed" && !isTucked;
-  const { collapsedTaskTitle, collapsedTodoCount, collapsedItem, peekedAgent, switchCollapsedItem, collapsedIslandWidth: collapsedWidthTarget, statusFit, idleDisplay, todoRotation, collapsedTimer } =
+  const { collapsedTaskTitle, collapsedTodoCount, collapsedItem, peekedAgent, switchCollapsedItem, collapsedIslandWidth: collapsedWidthTarget, statusFit, idleDisplay, todoRotation, collapsedTimer, pluginFocusTimer } =
     useCollapsedTodo(
       settings.todoEnabled ? todos : NO_TODOS,
       settings.todoEnabled ? activeTodoId : null,
@@ -127,6 +135,7 @@ export function IslandApp() {
         runningAgents, agentPeekAllowed: collapsed && !hasMessagePreview,
         coverWanted: Boolean(cover), timer: settings.todoEnabled ? timer : null,
         activeIds: settings.todoEnabled ? activeTodoIds : [], timers: settings.todoEnabled ? timers : [],
+        pluginFocus,
         // The extra is the source icon and the spacing round the sender's dot, or the code's button.
         notice: collapsed && preview ? { text: collapsedMessageText(preview, t.messages), extraWidth: preview.otpCode ? 140 : 30 } : null,
         alertText: quotaAlert ? quotaAlertText(quotaAlert, t.agent.quota) : batteryAlert ? t.deviceBattery.lowAlert(batteryAlert.name, batteryAlert.percent) : null },
@@ -267,6 +276,7 @@ export function IslandApp() {
         collapsedTaskTitle={collapsedTaskTitle}
         todoRotation={todoRotation}
         todoTimer={settings.todoEnabled ? collapsedTimer : null}
+        pluginFocusTimer={pluginFocusTimer}
         collapsedTodoCount={collapsedTodoCount}
         collapsedItem={collapsedItem}
         onSwitchCollapsedItem={switchCollapsedItem}

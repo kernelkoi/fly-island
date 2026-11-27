@@ -16,6 +16,7 @@ import type { FileShelfText } from "./sections/fileShelf";
 import type { DeviceBatteryText } from "./sections/deviceBattery";
 import type { EyeCareText } from "./sections/eyeCare";
 import type { PluginPanelText } from "./sections/pluginPanel";
+import type { PluginPageText } from "./sections/plugins";
 import type { SettingsText } from "./sections/settings/index";
 
 export type LocaleCode = "zh-CN" | "en";
@@ -55,6 +56,8 @@ export type Translations = {
 
   eyeCare: EyeCareText;
   deviceBattery: DeviceBatteryText;
+
+  plugins: PluginPageText;
 
   settings: SettingsText;
 };

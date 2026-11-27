@@ -7,6 +7,7 @@ import { idleTextDisplay } from "../../features/appearance/idleText";
 import type { CollapsedItem, IslandSettings } from "../../features/appearance/types";
 import type { TodoItem } from "../../features/todos/types";
 import { formatTodoCountdown, type TodoTimer } from "../../features/todos/timer";
+import type { PluginFocusController } from "../../features/plugins/pluginFocus";
 import { useTranslation } from "../../i18n";
 import { useTodoRotation } from "./useIslandAutomation";
 import { getCollapsedTextUnits } from "../../utils/text";
@@ -29,7 +30,7 @@ const COVER_WIDTH = 30;
 const ALERT_CHROME = 30;
 // A countdown pill beside the todo title: gap, padding and about 7px a digit (12px a CJK glyph).
 function timerPillWidth(text: string, fontScale: number) {
-  return 20 + fontScale * [...text].reduce((width, char) => width + (/[\u2E80-\uFFFF]/.test(char) ? 12 : 7), 0);
+  return 20 + fontScale * [...text].reduce((width, char) => width + (/[⺀-￿]/.test(char) ? 12 : 7), 0);
 }
 
 /**
@@ -47,11 +48,12 @@ export function useCollapsedTodo(
   settings: IslandSettings,
   isRotationPaused: boolean,
   agentTitle: string | null = null,
-  { lyricsPlaying = false, lyricsAvailable = false, agentActive = false, coverWanted = false, timer = null, activeIds, timers, notice = null, alertText = null, runningAgents = NO_RUNNING_AGENTS, agentPeekAllowed = false }: {
+  { lyricsPlaying = false, lyricsAvailable = false, agentActive = false, coverWanted = false, timer = null, activeIds, timers, notice = null, alertText = null, runningAgents = NO_RUNNING_AGENTS, agentPeekAllowed = false, pluginFocus = null }: {
     lyricsPlaying?: boolean; coverWanted?: boolean; timer?: TodoTimer | null; activeIds?: string[]; timers?: TodoTimer[];
     lyricsAvailable?: boolean; agentActive?: boolean;
     notice?: CollapsedWidthContent | null; alertText?: string | null;
     runningAgents?: readonly RunningAgent[]; agentPeekAllowed?: boolean;
+    pluginFocus?: PluginFocusController | null;
   } = {},
 ) {
   const t = useTranslation();
@@ -94,27 +96,37 @@ export function useCollapsedTodo(
     );
     return activeTodo?.title ?? null;
   }, [displayedTodoId, todos]);
+  // A plugin task the user started takes the todo slot: the island names the work in hand, and
+  // the provider's task is left untouched. It also takes the face from rotation and from a
+  // built-in round, so two titles (or two countdowns) never mix on one line.
+  const pluginFocusTitle = pluginFocus?.title ?? null;
+  const pluginFocusTimer = pluginFocus?.timer ?? null;
+  const focusTitle = pluginFocusTitle ?? collapsedTaskTitle;
+  const shownTimer = pluginFocusTitle === null ? collapsedTimer : null;
+  const shownRotation = pluginFocusTitle === null ? todoRotation : null;
   // "0 todos left" is not worth a hint; with nothing pending the bar shows what it
   // would without a todo count.
   const pendingTodoCount = pendingTodoIds.length;
-  const collapsedTodoCount = settings.showIdleTodoCount && !collapsedTaskTitle && pendingTodoCount > 0
+  const collapsedTodoCount = settings.showIdleTodoCount && !focusTitle && pendingTodoCount > 0
     ? pendingTodoCount
     : null;
   const available = {
     agent: agentTitle !== null,
     lyrics: lyricsPlaying,
-    todo: collapsedTaskTitle !== null || collapsedTodoCount !== null,
+    todo: focusTitle !== null || collapsedTodoCount !== null,
   };
   const canSwitchTo = { ...available, agent: available.agent && agentActive, lyrics: lyricsPlaying && lyricsAvailable };
   const [choice, setChoice] = useState<CollapsedItem | null>(null);
   const selection = resolveCollapsedItem(settings.collapsedPriority, available, canSwitchTo, choice,
-    activeTodoId !== null && pendingTodoIds.includes(activeTodoId), Boolean(timers?.length || timer));
+    activeTodoId !== null && pendingTodoIds.includes(activeTodoId), Boolean(timers?.length || timer || pluginFocusTimer));
   if (choice !== selection.choice) setChoice(selection.choice);
   const { peekedAgent, cancelAgentPeek } = useAgentPeek(runningAgents, {
     allowed: agentPeekAllowed && settings.showCollapsedText && alertText === null,
     overChoice: selection.choice !== null && selection.choice !== "agent",
   });
-  const collapsedItem = peekedAgent ? "agent" : selection.item;
+  // A plugin task the user started claims the todo slot outright: an agent session or a lyric
+  // line must not push its title (or its countdown) off the face.
+  const collapsedItem = pluginFocusTitle !== null || pluginFocusTimer ? "todo" : peekedAgent ? "agent" : selection.item;
   const shownAgentTitle = peekedAgent?.title ?? agentTitle;
   const switchCollapsedItem = (direction: 1 | -1) => {
     if (!settings.showCollapsedText) return;
@@ -125,29 +137,34 @@ export function useCollapsedTodo(
   };
   const idleDisplay = idleTextDisplay(settings, {
     itemShown: collapsedItem !== null,
-    pendingLine: collapsedItem === "todo" && !collapsedTaskTitle && collapsedTodoCount !== null,
+    pendingLine: collapsedItem === "todo" && !focusTitle && collapsedTodoCount !== null,
   });
   const fontScale = settings.islandFontPercent / 100;
   const content = useMemo(() => {
-    // A fixed width for the whole round; ticking digits never resize the native window.
-    const visibleTimers = rotating && timers ? timers : collapsedTimer ? [collapsedTimer] : [];
+    // A fixed width for the whole round; ticking digits never resize the native window. A plugin
+    // focus owns the line, so the built-in rounds and rotation are not measured.
+    const visibleTimers = pluginFocusTitle !== null ? [] : rotating && timers ? timers : collapsedTimer ? [collapsedTimer] : [];
     const widestTimer = visibleTimers.reduce<string | null>((widest, round) => {
       const text = round.notified ? t.todo.timeUp : formatTodoCountdown(round.durationMinutes * 60);
       return !widest || text.length > widest.length ? text : widest;
     }, null);
-    const todoText = rotating && rotationTodos.length
+    const todoText = rotating && rotationTodos.length && pluginFocusTitle === null
       ? rotationTodos.reduce((widest, todo) => getCollapsedTextUnits(todo.title) > getCollapsedTextUnits(widest) ? todo.title : widest, "")
-      : collapsedTaskTitle ?? (collapsedTodoCount !== null ? idleDisplay.pending ?? t.island.pendingTodos(collapsedTodoCount) : null);
+      : focusTitle ?? (collapsedTodoCount !== null ? idleDisplay.pending ?? t.island.pendingTodos(collapsedTodoCount) : null);
     const itemText = collapsedItem === "agent"
       ? AGENT_ICON_TEXT + shownAgentTitle
       : collapsedItem === "lyrics" ? LYRICS_WIDTH_TEXT : collapsedItem === "todo" ? todoText : null;
+    // A focus round's pill is fixed for the round too, so ticks never resize the window.
+    const focusPill = pluginFocusTimer && collapsedItem === "todo" && settings.showCollapsedText
+      ? timerPillWidth(pluginFocusTimer.notified ? t.todo.timeUp : formatTodoCountdown(pluginFocusTimer.durationMinutes * 60), fontScale)
+      : 0;
     return {
       text: settings.showCollapsedText ? itemText ?? "" : "",
       brand: settings.showCollapsedText ? idleDisplay.brand : null,
       fixedText: collapsedItem === "lyrics",
-      extraWidth: widestTimer && collapsedItem === "todo" && settings.showCollapsedText ? timerPillWidth(widestTimer, fontScale) : 0,
+      extraWidth: (widestTimer && collapsedItem === "todo" && settings.showCollapsedText ? timerPillWidth(widestTimer, fontScale) : 0) + focusPill,
     };
-  }, [shownAgentTitle, collapsedItem, collapsedTaskTitle, collapsedTodoCount, fontScale, settings.showCollapsedText,
+  }, [shownAgentTitle, collapsedItem, collapsedTodoCount, focusTitle, pluginFocusTitle, pluginFocusTimer, fontScale, settings.showCollapsedText,
     idleDisplay.brand, idleDisplay.pending, t, collapsedTimer, timers, rotating, rotationTodos]);
 
   const statusFit = fitClockWeather(settings.collapsedAutoWidth ? settings.collapsedAutoWidthMax : settings.collapsedWidth,
@@ -162,5 +179,10 @@ export function useCollapsedTodo(
     fontScale, chrome: chrome.width, measure: chrome.measure,
     stageWidth: window.innerWidth, devicePixelRatio: window.devicePixelRatio,
   });
-  return { collapsedTaskTitle, collapsedTodoCount, collapsedItem, peekedAgent, switchCollapsedItem, collapsedIslandWidth, statusFit, idleDisplay, todoRotation, collapsedTimer };
+  return {
+    collapsedTaskTitle: focusTitle, collapsedTodoCount, collapsedItem, peekedAgent, switchCollapsedItem,
+    collapsedIslandWidth, statusFit, idleDisplay, todoRotation: shownRotation, collapsedTimer: shownTimer,
+    /** The countdown of the focused plugin task, shown beside its title. */
+    pluginFocusTimer,
+  };
 }

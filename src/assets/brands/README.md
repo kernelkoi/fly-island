@@ -16,8 +16,9 @@
 | `codex.webp` | [ChatGPT / Codex](https://chatgpt.com/) | [官网 Apple Touch 图标](https://cdn.oaistatic.com/assets/apple-touch-icon-mz9nytnj.webp) |
 | `deepseek.png` | [DeepSeek](https://www.deepseek.com/) | [官网 favicon](https://www.deepseek.com/favicon.ico)（225×225 PNG 转 180×180；浅色圆角底由界面 CSS 提供） |
 | `workbuddy.png` | [WorkBuddy](https://www.workbuddy.cn/) | 2026-11-13 取自本机安装的 WorkBuddy 5.9.3 的应用磁贴图标（`Assets/Square44x44Logo.targetsize-256_altform-unplated.png`，256×256 缩小到 64×64） |
+| `ticktick.svg` | [滴答清单 Dida365](https://www.dida365.com/) | 2026-11-17 用户提供的官方矢量图标（1024×1024 viewBox，透明底，含浅色投影层），原样保存；用于插件页和插件入口标识对应插件 |
 
-QQ、微信、QQ 邮箱的品牌标识及相关权利归腾讯及对应权利人所有；Claude 标识归 Anthropic 所有，OpenAI 标识归 OpenAI 所有，DeepSeek 标识归杭州深度求索所有，WorkBuddy 标识归腾讯所有。图标随应用打包，不在运行时请求远程图片。
+QQ、微信、QQ 邮箱的品牌标识及相关权利归腾讯及对应权利人所有；Claude 标识归 Anthropic 所有，OpenAI 标识归 OpenAI 所有，DeepSeek 标识归杭州深度求索所有，WorkBuddy 标识归腾讯所有；滴答清单标识归其权利人所有。图标随应用打包，不在运行时请求远程图片，仅用于标识来源，不做装饰或改色。
 
 以下插件市场图标于 2026-11-18 取得，统一做成方形磁贴（SVG），用于插件卡片、消息标签与 Agent 会话：
 

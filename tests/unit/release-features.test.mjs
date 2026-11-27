@@ -5,6 +5,8 @@ import { SETTINGS_CATEGORIES, SETTINGS_GROUPS, settingsCategoryFor } from "../..
 import { isPageEnabled, resolveMessageSource } from "../../src/windows/island/features.ts";
 import { normalizeSettings } from "../../src/features/appearance/settings.ts";
 
+// The expectations follow release-features.json, so the same suite holds whether the build
+// ships plugins or hides them: a feature that is off has no route, one that is on keeps its own.
 test("official market packages keep their entries with developer mode off", () => {
   assert.equal(MAIL_OTP_ENABLED, false);
   assert.equal(PLUGINS_ENABLED, false);
@@ -12,11 +14,13 @@ test("official market packages keep their entries with developer mode off", () =
   assert.equal(SETTINGS_GROUPS.some((group) => group.categories.includes("plugins")), true);
   assert.equal(settingsCategoryFor("plugins"), "plugins");
   const features = { todo: false, music: false, clipboard: false, shelf: false,
-    agents: false, translation: false, qq: false, wechat: false, qqMail: false, plugin: false };
+    agents: false, plugins: false, translation: false, qq: false, wechat: false, qqMail: false, plugin: false };
   assert.equal(isPageEnabled("qq", features), false);
   assert.equal(resolveMessageSource("plugin", { ...features, wechat: true }), "wechat");
   assert.equal(isPageEnabled("qq", { ...features, plugin: true }), true);
   assert.equal(resolveMessageSource("plugin", { ...features, plugin: true }), "plugin");
+  assert.equal(isPageEnabled("plugins", features), false);
+  assert.equal(isPageEnabled("plugins", { ...features, plugins: true }), true);
   for (const autoCopyOtp of [true, false]) {
     assert.equal(normalizeSettings({ autoCopyOtp }).autoCopyOtp, autoCopyOtp);
   }

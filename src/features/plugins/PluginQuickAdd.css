@@ -1,0 +1,8 @@
+/* Failure text under the input; the text stays for retry, so the reason sits right below.
+ * The form itself uses the todo page's `.todo-form` (todos/TodoNotebook.css). */
+.plugin-quick-add__error {
+  margin: 2px 10px 0;
+  color: var(--color-error-text);
+  overflow-wrap: anywhere;
+  font-size: calc(11px * var(--island-font-scale, 1));
+}

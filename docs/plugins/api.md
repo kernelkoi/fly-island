@@ -57,9 +57,9 @@ For failure send error instead of result:
 {"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Action failed"}}
 ```
 
-清单 actions 生成设置页按钮；会话/消息 action 是插件选择的不透明字符串，必须在最近一次快照中仍存在。宿主仅允许这两类已知动作，传给插件的参数**只有 id**，不传路径、会话对象或其他 payload。插件在自身内存中映射 id 到安全目标，不把 id 当 shell 命令/任意 URL。无 action 的条目可展示但不能跳转。result 只完成调用，不更新设置或快照；需另行 publish。宿主不直接展示插件 error.message；SDK 将 action 错误归一为上述通用响应。
+清单 actions 生成设置页按钮；会话/消息 action 是插件选择的不透明字符串，必须在最近一次快照中仍存在。宿主仅允许这两类已知动作——插件最近一次 publish 带 `composer: true` 时，还允许以 `create.` 开头的动作（快速添加待办，标题由插件解析、非法则返回错误）。传给插件的参数**只有 id**，不传路径、会话对象或其他 payload。插件在自身内存中映射 id 到安全目标，不把 id 当 shell 命令/任意 URL。无 action 的条目可展示但不能跳转。result 只完成调用，不更新设置或快照；需另行 publish。宿主不直接展示插件 error.message；SDK 将 action 错误归一为上述通用响应。
 
-Manifest actions create settings buttons. Session/message actions are opaque strings chosen by the plugin and must remain in its latest snapshot. Only manifest or current session/message actions are allowed. The host sends **only the action ID**, no path, object or extra payload. Keep a validated ID-to-target mapping inside the process; never interpret IDs as shell commands or arbitrary URLs. Entries without actions display but cannot navigate. A result completes the call without updating settings/snapshots; publish separately. The host does not surface plugin error.message directly; the SDK normalizes action failures to the generic response above.
+Manifest actions create settings buttons. Session/message actions are opaque strings chosen by the plugin and must remain in its latest snapshot. Only these two kinds are allowed — plus, when the latest publish carries `composer: true`, actions starting with `create.` (quick-adding a todo; the plugin parses the title and answers error if it is invalid). The host sends **only the action ID**, no path, object or extra payload. Keep a validated ID-to-target mapping inside the process; never interpret IDs as shell commands or arbitrary URLs. Entries without actions display but cannot navigate. A result completes the call without updating settings/snapshots; publish separately. The host does not surface plugin error.message directly; the SDK normalizes action failures to the generic response above.
 
 长时间登录异步启动并立即返回，网络请求有超时。SDK poll/action 在同一个循环中执行，阻塞 poll 同样阻塞下一条 action/shutdown；耗时工作放到可取消 worker，poll 只读缓存。
 
@@ -76,6 +76,14 @@ Start long sign-in work asynchronously and respond immediately; bound network ti
 Replace example times/data with real values. Every publish **replaces all three arrays for this plugin**; omitted arrays mean empty, not unchanged. Include sessions/messages that should remain visible. Empty all three to clear. Nonempty arrays require matching contributions and permissions. Each plugin has its own snapshot.
 
 所有扩展对象拒绝未知字段。下表 `?` 为允许 null 或省略的 Option 字段，建议显式发 null，其余字段必填。文本纯文本、每字段最多 4096 UTF-8 字节且无 NUL；每数组内 id 非空且唯一（不套用 manifest id 正则）。时间为带符号 64 位 Unix **毫秒**；宿主不自动修正秒或保证时间合理，必须保留真实事件时间。不发布凭据、请求头、完整 transcript 或伪造成功。
+
+插件若支持快速添加待办，在 `publish` 顶层加 `"composer": true`（省略即不支持）；宿主会在待办视图底部和日历右栏底部显示输入框，回车时以 `create.<YYYY-MM-DD>.<title>` 作为动作 id 调用插件。待办视图筛选了某个清单、且该清单的会话带 `listId` 时，动作改为 `create.<YYYY-MM-DD>.list:<listId>.<title>`，让新任务落到当前清单；没有 `listId` 或选择「全部」时仍用默认收集箱。标题里的点会保留。插件添加成功后应重新 publish 一次快照，行不必等下一次轮询才出现。
+
+If a plugin supports quick add, include `"composer": true` at the top of `publish` (omit it if not). The host shows an input box at the bottom of the todo view and under the calendar; pressing Enter calls the plugin with the action ID `create.<YYYY-MM-DD>.<title>`. When the todo view is filtered to a list whose sessions carry `listId`, the ID becomes `create.<YYYY-MM-DD>.list:<listId>.<title>` so the new task lands in that list; without `listId`, or on "All", the plugin's default target is used. Dots in the title are kept. After a successful add the plugin should publish a fresh snapshot rather than waiting for the next poll.
+
+```json
+{"jsonrpc":"2.0","method":"publish","params":{"sessions":[],"composer":true}}
+```
 
 Contribution objects reject unknown fields. `?` below means an Option field accepting null or omission; explicit null is recommended. All other fields are required. Text is plain text, ≤4096 UTF-8 bytes per field, without NUL. IDs are nonempty and unique per array; the manifest-ID regex does not apply. Times are signed 64-bit Unix **milliseconds**; the host neither converts seconds nor ensures plausible dates. Preserve real event times. Never publish secrets, headers, full transcripts or fabricated success.
 
@@ -101,12 +109,22 @@ Concentric rings show balance first when nonnull, otherwise outer remaining perc
 | --- | --- | --- |
 | `id` | string | 稳定会话标识 / Stable session identity |
 | `title` | string | 可识别的任务标题 / Recognizable task title |
+| `detail` | string? | 标题下的详情行 / Detail line under the title |
+| `kind` | string? | 仅 `agent`（默认）、`task`、`action` / Only `agent` (default), `task`, `action` |
+| `due` | string? | 仅 `task` 行；本地日历日 `YYYY-MM-DD` / `task` rows only; local calendar day `YYYY-MM-DD` |
+| `listId` | string? | 仅 `task` 行；任务所属清单的服务方 id / `task` rows only; provider id of the owning list |
+| `repeat` | bool? | 仅 `task` 行；重复任务，`due` 是锚定日 / `task` rows only; repeating task, `due` is the anchor day |
+| `priority` | number? | 仅 `task` 行；服务方重要程度，0–5（0 = 无）/ `task` rows only; provider priority 0–5 (0 = none) |
 | `cwd` | string? | 项目目录，未知 null / Project directory or null |
 | `status` | string | 仅 `running`、`waiting`、`completed` / Only these three values |
 | `updatedAt` | i64 | 最后真实活动时间 / Last real session activity |
 | `action` | string? | 点击传回插件的动作 id / ID sent back on click |
 
 宿主身份为 `<plugin-id>/<session-id>`，复用时间窗口筛选、排序、归档、已读、列表/卡片/紧凑模式、标题与折叠计数。仅启用且 live.status 为 running 时参与；历史文件不能每轮变成「刚完成」。waiting 不是工具审批 API。v1 没有 failed、model、effort、lastMessage、自定义图标或进度字段；当前来源名取 manifest.name.en，并非所有内置字段都能提供。
+
+`kind` 决定一行的去处：`agent` 是 AI Agent 会话，进 Agent 页、折叠岛的任务名与运行计数；`task` 是待办类行（滴答清单这类插件），只进插件页的待办 / 日历视图，不点亮 Agent 状态灯、不参与折叠岛命名与已读 / 归档；`action` 是「一行一个动作」的快捷行（启动器这类插件），只进插件页，行上只画标题、detail 和一个「打开」按钮，没有勾选框、专注按钮、排序菜单和待办 / 日历视图，也不进 Agent 页。`action` 行必须带 `action`，其 `detail` 会被显示；`task` 行的 detail 由宿主自己按 due / repeat 生成，插件写的不显示。`due` 违反 `YYYY-MM-DD` 会被宿主拒收；插件页在筛选某清单后把快速添加目标传给 `listId`；`priority` 插件页只把 1 / 3 / 5 画成短标记，其他值按「无」处理，标记与文案由 UI 决定，插件不发本地化文本。
+
+`kind` decides where a row goes: `agent` is an AI agent session that joins the Agent page and the collapsed island's task name and running count; `task` is a todo-style row (todo-list plugins) that lives only in the plugin page's todo/calendar views, never lights the Agent lamp or joins collapsed naming or read/archive state; `action` is a one-action-per-row shortcut row (launcher plugins) that shows only title, detail and an "Open" button in the plugin page, without checkboxes, focus buttons, sort menus or the todo/calendar views, and never joins the Agent page. An `action` row must carry `action` and its `detail` is shown; a `task` row's detail is generated by the host from due/repeat, so the plugin's value is ignored. A malformed `due` is rejected; `listId` carries the filtered list target back for quick add; the plugin page renders priority 1/3/5 as short marks, all other values as none, with UI-owned wording — plugins send no localized text.
 
 The adapter namespaces IDs as `<plugin-id>/<session-id>` and reuses time filtering, sorting, archive/read state, list/card/compact views, titles and collapsed counts. Only enabled plugins with running live status contribute. Never turn historical files into “just completed” sessions on each poll. waiting is not a tool-approval API. v1 has no failed/model/effort/lastMessage/custom-icon/progress fields; the current source name uses manifest.name.en. Plugins cannot supply every built-in field.
 

@@ -13,6 +13,11 @@ fn validates_manifest_and_protocol() {
     for path in ["../test.exe", "C:/test.exe", "a\\test.exe", "/test.exe"] {
         let mut m = manifest(); m.runtime.command = path.into(); assert!(m.validate().is_err());
     }
+    let mut m = manifest();
+    m.icon = Some("ticktick".into());
+    assert!(m.validate().is_ok());
+    m.icon = Some("TickTick".into());
+    assert!(m.validate().is_err());
     let publish = |params| json!({"jsonrpc":"2.0","method":"publish","params":params}).to_string();
     let m = manifest();
     assert!(protocol::parse_publish(&publish(json!({})), &m).unwrap().is_some());
@@ -20,6 +25,30 @@ fn validates_manifest_and_protocol() {
     assert!(protocol::parse_publish("{\"jsonrpc\":\"1.0\"}", &m).is_err());
     let invalid = json!({"quota":[{"id":"q","label":"q","remainingPercent":101,"secondaryPercent":null,"balance":null,"resetsAt":null,"updatedAt":1}]});
     assert!(protocol::parse_publish(&publish(invalid), &m).is_err());
+    let session = |detail| json!({"sessions":[{"id":"s","title":"t","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":detail}]});
+    assert!(protocol::parse_publish(&publish(session(json!(null))), &m).unwrap().is_some());
+    assert!(protocol::parse_publish(&publish(session(json!("下午 2 点前 · 工作"))), &m).unwrap().is_some());
+    assert!(protocol::parse_publish(&publish(session(json!("\0"))), &m).is_err());
+    let task = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null}]});
+    assert!(protocol::parse_publish(&publish(task), &m).unwrap().is_some());
+    let bad_kind = json!({"sessions":[{"id":"t","title":"t","kind":"todo","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null}]});
+    assert!(protocol::parse_publish(&publish(bad_kind), &m).is_err());
+    let due_task = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"due":"2026-11-17"}]});
+    assert!(protocol::parse_publish(&publish(due_task), &m).unwrap().is_some());
+    for due in ["2026-13-01", "2026-11-32", "2026-1-1", "today"] {
+        let bad_due = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"due":due}]});
+        assert!(protocol::parse_publish(&publish(bad_due), &m).is_err());
+    }
+    // The host accepts the provider's 0–5 scale; the plugin page names 0/1/3/5 and leaves the
+    // rest undrawn. Outside that range is a plugin bug, not a row to guess at.
+    for priority in [0, 1, 2, 3, 4, 5] {
+        let row = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"priority":priority}]});
+        assert!(protocol::parse_publish(&publish(row), &m).unwrap().is_some());
+    }
+    for priority in [-1, 6] {
+        let row = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"priority":priority}]});
+        assert!(protocol::parse_publish(&publish(row), &m).is_err());
+    }
     let mut restricted = m.clone(); restricted.contributes.clear();
     let n = json!({"notifications":[{"id":"n","sourceId":"test","appName":"test","icon":"plugin","title":"test","body":"test","receivedAt":1,"action":null}]});
     assert!(protocol::parse_publish(&publish(n), &restricted).is_err());
@@ -130,6 +159,17 @@ fn windows_device_names_and_archive_aliases_are_rejected() {
         assert!(packages::extract(&bytes, &root, &entry(&bytes, String::new())).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+#[test]
+fn development_directory_survives_pasted_quotes_and_whitespace() {
+    // Windows wins "os error 123" on each of these before it looks at the directory, so the
+    // paste has to be cleaned up rather than reported as a broken path.
+    for raw in [r#""C:\tools\plugin""#, "  C:\\tools\\plugin  ", "\u{feff}C:\\tools\\plugin", "“C:\\tools\\plugin”"] {
+        assert_eq!(super::clean_directory(raw), r"C:\tools\plugin", "{raw:?}");
+    }
+    assert_eq!(super::clean_directory(" \t"), "");
+    assert_eq!(super::clean_directory(r"C:\tools\plugin"), r"C:\tools\plugin");
 }
 
 #[test]
@@ -432,6 +472,35 @@ fn built_artifacts_index_installs_and_runs() {
 
     drop(host);
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn composer_actions_are_allowed_but_undeclared_ones_are_not() {
+    let root = temporary("composer-actions");
+    let host = Host::new(root.join("data"), None, true).unwrap();
+    let plugin = super::storage::Installed {
+        manifest: manifest(), enabled: true, directory: root.join("plugins/example-hello"),
+        development: false, settings: Default::default(),
+    };
+    host.persist(super::storage::Registry { installed: [(plugin.manifest.id.clone(), plugin)].into(), ..Default::default() }).unwrap();
+    // Nothing published yet: the composer allowance needs the plugin's own announcement.
+    assert_eq!(host.action("example-hello", "create.2026-11-18.买牛奶").unwrap_err(), "Unknown plugin action");
+    let live = |composer| super::service::Live {
+        status: "running".into(), settings_configured: true,
+        data: protocol::Contributions { composer, ..Default::default() },
+    };
+    for (composer, allowed) in [(true, true), (false, false)] {
+        host.live.lock().unwrap().insert("example-hello".into(), live(composer));
+        // A `create.` action for a composer plugin reaches the (here missing) worker; without the
+        // announcement, and for anything outside the composer contract, the gate still rejects it.
+        assert_eq!(
+            host.action("example-hello", "create.2026-11-18.买牛奶").unwrap_err(),
+            if allowed { "Plugin is stopped" } else { "Unknown plugin action" }
+        );
+        assert_eq!(host.action("example-hello", "complete.p1.t1").unwrap_err(), "Unknown plugin action");
+    }
+    drop(host);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

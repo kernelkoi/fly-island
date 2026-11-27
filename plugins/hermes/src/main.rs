@@ -25,7 +25,7 @@ pub fn parse_session_file(path: &std::path::Path) -> Option<Value> {
                 .as_i64()
                 .or_else(|| v["updatedAt"].as_i64())
                 , path);
-            return Some(session(id, title, cwd, status, updated, None));
+            return Some(session(id, title, cwd, status, updated, None, None));
         }
     } else if ext == "jsonl" {
         // Read first non-empty line or last line
@@ -35,7 +35,7 @@ pub fn parse_session_file(path: &std::path::Path) -> Option<Value> {
                 let title = v["title"].as_str().or_else(|| v["name"].as_str()).unwrap_or(stem);
                 let cwd = v["cwd"].as_str().or_else(|| v["workdir"].as_str());
                 let updated = timestamp_or_file(v["timestamp"].as_i64(), path);
-                return Some(session(id, title, cwd, "completed", updated, None));
+                return Some(session(id, title, cwd, "completed", updated, None, None));
             }
         }
     }

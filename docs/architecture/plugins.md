@@ -8,7 +8,7 @@ API v1 已实现为独立进程平台，协议见 [API](../plugins/api.md)。没
 
 `win32/process_job.rs` 以 kill-on-close Job Object 管理插件及其子进程；正常停止先发可选 `shutdown`，最多等待 3 秒，再结束进程树。旧 v1 插件不实现 shutdown 仍可被停止。SDK 的输入和输出均限制为 256 KiB；会话按更新时间保留最多 200 条，缺失时间使用文件修改时间，不把历史文件刷新为刚完成。
 
-前端 `features/plugins/` 提供类型化 IPC、共享快照与 manifest 设置行。额度和会话适配在 `features/agent-status/PluginQuotaRings.tsx`、`pluginSessions.ts`；消息在 `features/messages/PluginMessagesPanel.tsx` 和 `pluginNotifications.ts`。原有渲染组件继续负责视觉、列表和预览仲裁。
+前端 `features/plugins/` 提供类型化 IPC、共享快照与 manifest 设置行；`PluginIcon` 按 manifest 的 `icon` 名字画宿主自带的标识，未知或不填用拼图。额度和会话适配在 `features/agent-status/PluginQuotaRings.tsx`、`pluginSessions.ts`；消息在 `features/messages/PluginMessagesPanel.tsx` 和 `pluginNotifications.ts`。原有渲染组件继续负责视觉、列表和预览仲裁。`kind: task` 的会话行由插件页 `PluginTasksPanel` 显示，不进 Agent 页与会话计数，插件不能自带图标或样式。
 
 默认索引 `https://github.com/flyl1u/fly-island/releases/download/plugins-channel/plugins-index.json`；启用开发发布开关的构建先读取 FLY_ISLAND_PLUGINS_INDEX，再使用开发者模式的自定义索引。插件的可执行文件和 API schema 都经维护者 review；权限是声明，没有把普通进程称为沙箱。
 

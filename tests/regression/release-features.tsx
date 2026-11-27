@@ -2,7 +2,8 @@ import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { I18nProvider } from "../../src/i18n";
-import { PLUGINS_ENABLED, MAIL_OTP_ENABLED, PLUGIN_MARKET_ENABLED } from "../../src/features/releaseFlags.ts";
+import { PLUGINS_ENABLED, MAIL_OTP_ENABLED, PLUGIN_MARKET_ENABLED, PLUGIN_RUNTIME_ENABLED } from "../../src/features/releaseFlags.ts";
+import { isPageEnabled } from "../../src/windows/island/features.ts";
 import { NATIVE_PLUGINS_KEY, useNativePlugins } from "../../src/features/plugins/native";
 import { usePlugins, refreshPlugins } from "../../src/features/plugins/usePlugins";
 import { useEffortLabels } from "../../src/features/agent-status/useEffortLabels";
@@ -39,6 +40,10 @@ try {
   check(calls.includes("get_plugins") && !calls.includes("get_plugins_index") && !calls.includes("configure_plugins"), "正式版读取市场包状态，启动时不请求索引或打开开发者模式");
   const installed = nativeInstalled as ReturnType<typeof useNativePlugins> | null;
   check(installed?.dingtalk && installed.zcode && !installed.cursor, "测试版装过的内置插件在正式版里仍算已安装");
+  // The plugin sessions page follows the plugin runtime switch (market included) and needs a
+  // plugin that publishes sessions: no sessions published means no page.
+  check(!isPageEnabled("plugins", {} as never), "没有插件发布会话时，插件会话页不进入页面导航");
+  check(isPageEnabled("plugins", { plugins: true } as never) === PLUGIN_RUNTIME_ENABLED, "插件会话页跟随插件运行时开关");
   check(document.querySelector("output")?.textContent?.includes('"installed":{}'), "插件快照为空，不产生会话、额度和消息入口");
   const event: MailEvent = {
     snapshot: { email: "test@example.com", configured: true, enabled: true, syncing: false,

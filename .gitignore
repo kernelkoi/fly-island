@@ -43,3 +43,6 @@ src-tauri/tauri.release.conf.json
 *.vsix
 /artifacts/plugins/
 /plugins/**/target/
+
+# Plugin runtime binaries are build outputs, copied from plugins/*/target/release.
+/plugins/**/*.exe

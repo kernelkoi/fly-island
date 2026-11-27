@@ -17,7 +17,12 @@ const VIEWS: TodoView[] = ["today", "daily", "calendar"];
  * Todos / Notes / Calendar as one segmented control. Only the active segment shows
  * its label, so the control stays narrow; a pill slides under it.
  */
-export function TodoViewSwitch({ pageMode, onSelect }: { pageMode: TodoPageMode; onSelect: (view: TodoView) => void }) {
+export function TodoViewSwitch({ pageMode, onSelect, views = VIEWS }: {
+  pageMode: TodoPageMode;
+  onSelect: (view: TodoView) => void;
+  /** Which views this page offers; the todo page has all three, a plugin page may have two. */
+  views?: TodoView[];
+}) {
   const t = useTranslation();
   const active = pageMode === "upcoming" ? "today" : pageMode;
   const labels: Record<TodoView, string> = {
@@ -51,7 +56,7 @@ export function TodoViewSwitch({ pageMode, onSelect }: { pageMode: TodoPageMode;
           style={{ width: pill.width, transform: `translateX(${pill.left}px)` }}
         />
       )}
-      {VIEWS.map((view) => {
+      {views.map((view) => {
         const Icon = ICONS[view];
         const selected = view === active;
         return (

@@ -1,0 +1,434 @@
+/*
+ * The plugins page. Heights are counted by getPluginsExpandedHeight
+ * (windows/island/expandedHeight.ts): rows of 40px 6px apart, the view row of 24px,
+ * an optional 24px filter row and 10px gaps; keep in step.
+ * Laid out like the todo page's own notebook: no card of its own, just the page's padding.
+ */
+.plugin-tasks {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  overflow-y: auto;
+  scrollbar-color: rgba(var(--ink-rgb), 0.24) transparent;
+  scrollbar-width: thin;
+  padding: 12px 0;
+  color: var(--text-1);
+  background: transparent;
+}
+
+.plugin-tasks__empty {
+  margin: auto;
+  color: var(--text-3);
+  font-size: calc(12px * var(--island-font-scale, 1));
+}
+
+/* A failed refresh keeps the rows and says so in one line above them. */
+.plugin-tasks__stale {
+  margin: 0 2px;
+  color: var(--color-error-text);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1.35;
+}
+
+/* Configured with nothing unfinished: a quiet line above the add box, not the page's empty state. */
+.plugin-tasks__none {
+  margin: 0 2px;
+  color: var(--text-3);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1.35;
+}
+
+/* Today's finished rows: kept apart from the open list so they read as history, not backlog. */
+.plugin-tasks__done {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-white-a08);
+}
+
+.plugin-tasks__done-head {
+  margin: 0 2px 2px;
+  color: var(--text-3);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  font-weight: 600;
+}
+
+.plugin-tasks__plugin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+/* Calendar mode fills the page instead of growing past it. */
+.plugin-tasks__plugin--calendar {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+/* The view switch shares one row with the quota rings and the sort picker. */
+.plugin-tasks__toolbar {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.plugin-tasks__aside {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The sort picker sits in the toolbar, left of the progress line. It names the mode in force, so
+   the order on screen never has to be guessed from an arrow icon. */
+.plugin-tasks__sort {
+  max-width: 92px;
+  height: 24px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 5px;
+  border: 0;
+  border-radius: var(--corner-sm);
+  color: var(--text-2);
+  background: transparent;
+  font-size: calc(11px * var(--island-font-scale, 1));
+  cursor: pointer;
+}
+
+.plugin-tasks__sort-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-tasks__sort:hover,
+.plugin-tasks__sort[aria-expanded="true"] { color: var(--text-1); background: var(--color-white-a08); }
+
+.plugin-tasks__sort:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: -2px; }
+
+/* Fixed to the page: the scrolling plugin list would clip an absolutely placed menu. */
+.plugin-sort-menu {
+  position: fixed;
+  z-index: 40;
+  width: 216px;
+  padding: 4px;
+  color: var(--text-1);
+  background: var(--color-popover);
+  border: 1px solid var(--color-white-a10);
+  border-radius: var(--corner-md);
+  corner-shape: var(--corner-shape);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-black) 32%, transparent);
+  font-family: var(--font-ui);
+  font-size: calc(12px * var(--island-font-scale, 1));
+}
+
+.plugin-sort-menu__item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--corner-xs);
+  color: var(--text-2);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plugin-sort-menu__item:hover { color: var(--text-1); background: var(--color-white-a08); }
+.plugin-sort-menu__item[aria-checked="true"] { color: var(--text-1); }
+.plugin-sort-menu__item:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: -2px; }
+
+.plugin-sort-menu__check {
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--color-accent);
+}
+
+/* A mode's name, then the one line that says what it does to the order. */
+.plugin-sort-menu__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.plugin-sort-menu__label { font-weight: 500; }
+
+.plugin-sort-menu__hint {
+  color: var(--text-3);
+  font-size: calc(10px * var(--island-font-scale, 1));
+  line-height: 1.35;
+}
+
+.plugin-tasks__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plugin-tasks__progress progress {
+  appearance: none;
+  width: 84px;
+  height: 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-pill);
+}
+
+.plugin-tasks__progress progress::-webkit-progress-bar {
+  background: var(--color-white-a18);
+  border-radius: var(--radius-pill);
+}
+
+.plugin-tasks__progress progress::-webkit-progress-value {
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+/* The list in view and how much of it is still open, as one toolbar button; the other lists are
+   in its menu. It shares the sort picker's shape so the row reads as one group of controls. */
+.plugin-tasks__list {
+  max-width: 108px;
+  height: 24px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 6px;
+  border: 0;
+  border-radius: var(--corner-sm);
+  color: var(--text-2);
+  background: transparent;
+  font-size: calc(11px * var(--island-font-scale, 1));
+  cursor: pointer;
+}
+
+.plugin-tasks__list:hover,
+.plugin-tasks__list[aria-expanded="true"] { color: var(--text-1); background: var(--color-white-a08); }
+
+.plugin-tasks__list:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: -2px; }
+
+.plugin-tasks__list-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The open count supports the name, as on the old chips: it never carries the row alone. */
+.plugin-tasks__list b {
+  color: var(--text-3);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A list name can be long: the menu grows with it, up to a height the island can show. */
+.plugin-list-menu {
+  width: auto;
+  min-width: 132px;
+  max-width: 200px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.plugin-list-menu__item { gap: 6px; }
+
+.plugin-list-menu__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-list-menu__count {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--text-3);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A task row borrows the todo page's item grid; its text column holds title and detail. */
+.plugin-tasks__row { border-bottom-color: var(--color-white-a08); }
+
+/* A row that can be started needs a third column for the Start button; the text keeps the rest. */
+.plugin-tasks__row--focusable {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+}
+
+/* The Start button of a plugin task: the built-in todo's pill, without its label. */
+.plugin-tasks__focus {
+  min-width: 0;
+  height: 22px;
+  align-self: start;
+  padding: 0 8px;
+  gap: 4px;
+}
+
+/* The round's countdown sits inside the button, so it needs a little more room. */
+.plugin-tasks__focus--active { padding: 0 6px 0 8px; }
+
+.plugin-tasks__focus--active .todo-countdown {
+  font-size: calc(12px * var(--island-font-scale, 1));
+  font-variant-numeric: tabular-nums;
+}
+
+.plugin-tasks__focus-group { align-self: start; }
+
+.plugin-tasks__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* The task's own importance, as a short word in front of the title. It never wraps the row: the
+   word is one or two characters and the title keeps the rest of the line. */
+.plugin-tasks__priority {
+  margin-right: 5px;
+  padding: 0 4px;
+  border-radius: var(--corner-xs);
+  font-size: calc(10px * var(--island-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.4;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.plugin-tasks__priority--high { color: var(--color-error-text); background: color-mix(in srgb, var(--color-error-text) 18%, transparent); }
+.plugin-tasks__priority--medium { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 18%, transparent); }
+.plugin-tasks__priority--low { color: var(--text-2); background: var(--color-white-a10); }
+
+/* One line per row: a task shows its list and due date, an agent session its status. */
+.plugin-tasks__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1.35;
+}
+
+/* A failed action keeps the row and says why, since nothing else changes on screen. */
+.plugin-tasks__error {
+  color: var(--color-error-text);
+  overflow-wrap: anywhere;
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1.35;
+}
+
+/* The calendar uses the todo page's layout inside the plugin page. */
+.plugin-calendar {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+/* Month header, the grid, then the legend directly under the calendar. */
+.plugin-calendar .todo-date-overview__sidebar {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* A quiet count line under the month grid, matching the calendar reference. */
+.plugin-calendar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 5px 2px 1px;
+  border-top: 1px solid var(--color-white-a08);
+  color: var(--text-3);
+  font-size: calc(10px * var(--island-font-scale, 1));
+  line-height: 1.4;
+}
+
+.plugin-calendar__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.plugin-calendar__legend-item b {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.plugin-calendar__legend-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.plugin-calendar__legend-dot--overdue { background: #e55a42; }
+.plugin-calendar__legend-dot--today { background: #e8a33d; }
+.plugin-calendar__legend-dot--undated { background: var(--text-3); }
+
+/* Quick add sits under the day's tasks in the calendar. */
+.plugin-quick-add--calendar {
+  margin: 2px 6px 2px 8px;
+}
+
+/* A failed check in the day panel keeps the day's rows and explains itself below them. */
+.plugin-calendar__error {
+  margin: 4px 8px 0;
+  color: var(--color-error-text);
+  overflow-wrap: anywhere;
+  font-size: calc(11px * var(--island-font-scale, 1));
+}
+
+/* The date windows above the add box: one row of chips, so the choice is visible without opening
+   a menu and still fits the island's narrowest width. */
+.plugin-tasks__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.plugin-tasks__date {
+  height: 22px;
+  flex: none;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-3);
+  background: var(--color-white-a06);
+  font-family: var(--font-ui);
+  font-size: calc(11px * var(--island-font-scale, 1));
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.plugin-tasks__date:hover { color: var(--text-1); background: var(--color-white-a10); }
+
+.plugin-tasks__date--active {
+  color: var(--text-1);
+  background: var(--color-white-a16);
+  font-weight: 600;
+}
+
+.plugin-tasks__date:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 1px; }
+
+/* In the list view it sits under the view switch, in the page's own flow. */
+.plugin-tasks__add {
+  padding-top: 2px;
+}

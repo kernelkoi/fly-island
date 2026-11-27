@@ -11,6 +11,7 @@ import { useUpdatePending } from "../../features/updater/useUpdatePending";
 import type { MessageSource, OfficeSource } from "../../features/messages/messagePreview";
 import { PLUGIN_PANEL_ICONS } from "../../features/plugins/panel";
 import { useLocale, useTranslation } from "../../i18n";
+import { PluginIcon, usePlugins } from "../../features/plugins";
 import { isPageEnabled, type IslandFeatures } from "./features";
 import type { IslandPage } from "./types";
 import "./IslandHeader.css";
@@ -134,6 +135,12 @@ export function IslandHeader({
   const dotStyle = labeled ? "dot-button--icon dot-button--icon-label" : showIcons ? "dot-button--icon" : "dot-button--capsule";
   const reminderNames = [telegramPending ? t.messages.sourceLabels.telegram : null, officePending && t.messages.sourceLabels[officePending]].filter(Boolean);
   const messageBadgeLabel = t.messages.badge(qqNotificationCount, wechatPending, reminderNames.join(", "));
+  // One plugin page entry can wear that plugin's own mark; several plugins share the puzzle.
+  const plugins = usePlugins();
+  const published = Object.values(plugins.registry.installed).filter((p) => p.enabled && p.manifest.contributes.includes("sessions"));
+  const pluginIcon = published.length === 1 ? published[0].manifest.icon : null;
+  // A lone plugin's entry is that plugin's page, so it says the plugin's name rather than "Plugins".
+  const pluginName = published.length === 1 ? published[0].manifest.name[locale] : null;
   // The page dots, in the order the user dragged them into; a dot can be dragged sideways.
   // Translation has one while it is on, also when it opens in its own window.
   const dots = pageOrder.filter((dot) => (dot === "translation" ? onOpenTranslator !== null : features[dot]));
@@ -254,7 +261,28 @@ export function IslandHeader({
             </button>
           );
         })}
-        {/* Messages sit with the page buttons, after the draggable ones; they are not reordered. */}
+        {/* The plugins page (a plugin's tasks) and messages sit with the page buttons, after the
+            draggable ones; they are not reordered. */}
+        {isPageEnabled("plugins", features) && (
+          <button
+            className={[
+              "dot-button",
+              "dot-button--plugins",
+              showIcons ? "dot-button--icon" : "dot-button--capsule",
+              page === "plugins" ? "dot-button--active" : "",
+            ].filter(Boolean).join(" ")}
+            type="button"
+            aria-label={pluginName ?? t.plugins.title}
+            aria-pressed={page === "plugins"}
+            data-tip={pluginName ?? t.plugins.title}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPageChange("plugins");
+            }}
+          >
+            {showIcons && <PluginIcon icon={pluginIcon} size={16} />}
+          </button>
+        )}
         {isPageEnabled("qq", features) && (
           <button
             className={[

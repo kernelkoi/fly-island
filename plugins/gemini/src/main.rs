@@ -156,7 +156,7 @@ fn list_sessions() -> Vec<Value> {
                                             let title = v["title"].as_str().unwrap_or("Gemini Chat");
                                             let cwd = v["cwd"].as_str().or_else(|| v["workdir"].as_str());
                                             let updated = timestamp_or_file(v["updatedAt"].as_i64(), &cp);
-                                            sessions.push(session(id, title, cwd, "completed", updated, None));
+                                            sessions.push(session(id, title, cwd, "completed", updated, None, None));
                                         }
                                 }
                             }
@@ -170,7 +170,7 @@ fn list_sessions() -> Vec<Value> {
                             let title = v["title"].as_str().unwrap_or("Gemini Chat");
                             let cwd = v["cwd"].as_str().or_else(|| v["workdir"].as_str());
                             let updated = timestamp_or_file(v["updatedAt"].as_i64(), &path);
-                            sessions.push(session(id, title, cwd, "completed", updated, None));
+                            sessions.push(session(id, title, cwd, "completed", updated, None, None));
                         }
                 }
             }

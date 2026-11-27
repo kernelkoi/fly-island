@@ -21,6 +21,7 @@ src/
 │   ├── battery/             # 笔记本电池：只读状态、续航、功率与容量
 │   ├── messages/            # 消息导航与预览；mail/、qq-notifications/、wechat/、telegram/ 等子目录
 │   ├── agent-status/        # AI 代理状态；sounds/ 为 Agent 音效：内置音效播放、设置 → 声音页、导入音效包
+│   ├── plugins/             # 插件宿主的前端：插件快照与动作调用（api.ts / usePlugins.ts）、PluginIcon（宿主内置的品牌标识）、设置 → 插件页、岛上的插件页（PluginTasksPanel / PluginCalendar：待办与日历视图，复用 todos 的行、视图开关和月历；额度环复用 agent-status/PluginQuotaRings）
 │   ├── appearance/          # 外观设置、布局编辑器、预设；岛屿设置（fly-island-settings）的范围在 settingsLimits.ts、首次启动值在 settingsDefaults.ts、读取按领域在 normalizeLayout / Agent / BehaviorSettings.ts，新设置加在这几个文件里，settings.ts 只做入口
 │   ├── translation/         # 快捷翻译：服务与模型设置、凭据、快捷键的类型化封装，请求与自动翻译 hook，岛内翻译页
 │   ├── weather/             # 时间与天气内置插件：城市设置/缓存、Open-Meteo IPC、WMO映射、叶子时间与天气、共享低频刷新

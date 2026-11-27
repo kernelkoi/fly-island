@@ -52,11 +52,13 @@ export function useIslandFeatures({
     () => (PLUGIN_RUNTIME_ENABLED ? pluginPagesFrom(plugins.registry.installed, plugins.live) : []),
     [plugins],
   );
+  const hasPluginTasks = Object.values(plugins.registry.installed).some((p) => p.enabled && p.manifest.contributes.includes("sessions"));
   const features = useMemo<IslandFeatures>(() => ({
     plugin: hasPluginMessages,
     dingtalk: office.dingtalk,
     feishu: office.feishu,
     wecom: office.wecom,
+    plugins: hasPluginTasks,
     todo: settings.todoEnabled,
     music: settings.musicEnabled,
     clipboard: clipboardEnabled,
@@ -69,7 +71,7 @@ export function useIslandFeatures({
     translation: settings.translationEnabled && settings.translationTarget === "island",
     pluginPages,
     battery: hasBattery,
-  }), [clipboardEnabled, qqEnabled, settings.agentStatusEnabled, settings.mailEnabled, settings.musicEnabled, settings.shelfEnabled, settings.todoEnabled, settings.translationEnabled, settings.translationTarget, wechatEnabled, hasBattery, telegramEnabled, hasPluginMessages, pluginPages, office.dingtalk, office.feishu, office.wecom]);
+  }), [clipboardEnabled, qqEnabled, settings.agentStatusEnabled, settings.mailEnabled, settings.musicEnabled, settings.shelfEnabled, settings.todoEnabled, settings.translationEnabled, settings.translationTarget, wechatEnabled, hasBattery, telegramEnabled, hasPluginMessages, hasPluginTasks, pluginPages, office.dingtalk, office.feishu, office.wecom]);
 
   useEffect(() => {
     const next = islandPageFor(page, features, settings.clipboardDetached);

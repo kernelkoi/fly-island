@@ -4,6 +4,7 @@ import { PLUGIN_RUNTIME_ENABLED } from "../releaseFlags.ts";
 
 const EMPTY: PluginsSnapshot = { registry: { developerMode: false, indexUrl: "", installed: {} }, live: {} };
 let current = EMPTY;
+let loaded = false;
 const listeners = new Set<() => void>();
 let reading: Promise<void> | undefined;
 let dirty = false;
@@ -15,13 +16,19 @@ async function readPending() {
     dirty = false;
     try {
       const next = await getPlugins();
-      if (next?.registry?.installed && next.live && JSON.stringify(next) !== JSON.stringify(current)) {
-        current = next;
-        listeners.forEach((listener) => listener());
+      if (next?.registry?.installed && next.live) {
+        loaded = true;
+        if (JSON.stringify(next) !== JSON.stringify(current)) {
+          current = next;
+          listeners.forEach((listener) => listener());
+        }
       }
     } catch { /* The web demo has no native plugin host. */ }
   }
 }
+
+/** Whether a snapshot has arrived: before that, nothing is known about the installed plugins. */
+export function pluginsLoaded() { return loaded; }
 
 export function refreshPlugins() {
   if (!PLUGIN_RUNTIME_ENABLED) return Promise.resolve();

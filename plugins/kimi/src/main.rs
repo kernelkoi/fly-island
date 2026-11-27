@@ -85,7 +85,7 @@ fn list_sessions() -> Vec<Value> {
                         _ => "completed",
                     };
                     let updated = timestamp_or_file(v["updatedAt"].as_i64().or_else(|| v["updated_at"].as_i64()), &path);
-                    sessions.push(session(id, title, cwd, status, updated, None));
+                    sessions.push(session(id, title, cwd, status, updated, None, None));
             }
         }
     }

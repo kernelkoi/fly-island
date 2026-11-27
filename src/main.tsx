@@ -19,6 +19,7 @@ import { captureFirstLaunch } from "./features/onboarding/firstLaunch";
 import { installAppLogCapture } from "./features/diagnostics/appLogCapture";
 import { logStartupSettings } from "./features/diagnostics/islandSettings";
 import { restoreConfigBeforeMount } from "./features/config-transfer/bootstrap";
+import { PluginFocusProvider } from "./features/plugins/PluginFocusContext";
 
 const windowKind = new URLSearchParams(window.location.search).get("window");
 // First, so errors while the window starts are in the diagnostic log when it is on.
@@ -75,7 +76,9 @@ async function mountApp() {
         ) : windowKind === "clipboard" ? (
           <ClipboardWindow />
         ) : (
-          <IslandApp />
+          <PluginFocusProvider>
+            <IslandApp />
+          </PluginFocusProvider>
         )}
       </I18nProvider>
     </React.StrictMode>,

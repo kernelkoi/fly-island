@@ -9,7 +9,13 @@ const DEFAULT_INDEX: &str = "https://github.com/flyl1u/fly-island/releases/downl
 
 #[derive(Clone, Default, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Live { pub status: String, #[serde(flatten)] pub data: Contributions }
+pub struct Live {
+    pub status: String,
+    /// All secret settings have a value; secrets themselves never cross to the UI.
+    pub settings_configured: bool,
+    #[serde(flatten)]
+    pub data: Contributions,
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,7 +105,7 @@ impl Host {
         if id == "device-battery" && !p.development {
             let package = crate::device_battery::DevicePackage::new(self.device_battery_directory(&p)?)?;
             *self.device_battery.lock().map_err(|error| error.to_string())? = Some(Arc::new(package));
-            self.live.lock().map_err(|error| error.to_string())?.insert(id.into(), Live { status: "running".into(), data: Contributions::default() });
+            self.live.lock().map_err(|error| error.to_string())?.insert(id.into(), Live { status: "running".into(), data: Contributions::default(), ..Default::default() });
             self.notify();
             return Ok(());
         }
@@ -108,6 +114,12 @@ impl Host {
         if hosted_breaks { settings["_host-eye-care-windows"] = json!(true); }
         let break_language_english = settings["language"] == "en";
         let break_session = if hosted_breaks { self.app.as_ref().and_then(crate::eye_care::begin_session) } else { None };
+        // "Configured" only asks whether the secret settings hold values, so the UI can tell an
+        // unconfigured plugin from a quiet one without ever seeing the secrets themselves.
+        let settings_configured = settings.as_object().is_none_or(|map| {
+            p.manifest.settings.iter().filter(|s| s.kind == "secret")
+                .all(|s| map.get(&s.key).and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty()))
+        });
         let live = self.live.clone();
         let app = self.app.clone();
         let key = id.to_owned();
@@ -117,7 +129,7 @@ impl Host {
             // ticks itself, an unchanged reading) is not news: no event, no re-render.
             let changed = {
                 let mut current = live.lock().unwrap_or_else(PoisonError::into_inner);
-                let next = Live { status: status.into(), data };
+                let next = Live { status: status.into(), settings_configured, data };
                 let changed = current.get(&key).is_none_or(|live| *live != next);
                 current.insert(key.clone(), next);
                 changed
@@ -386,7 +398,15 @@ impl Host {
         let p = self.installed_for_runtime(id)?;
         let live = self.snapshot();
         let declared = p.manifest.actions.iter().any(|a| a.id == action)
-            || live.live.get(id).is_some_and(|l| l.data.sessions.iter().any(|s| s.action.as_deref() == Some(action)) || l.data.notifications.iter().any(|n| n.action.as_deref() == Some(action)));
+            || live.live.get(id).is_some_and(|l| {
+                let data = &l.data;
+                data.sessions.iter().any(|s| s.action.as_deref() == Some(action))
+                    || data.notifications.iter().any(|n| n.action.as_deref() == Some(action))
+                    // The composer assembles `create.<day>[.list:<id>].<title>` at submit time, so it
+                    // never appears in a snapshot; the plugin that announced the composer owns these
+                    // ids and rejects the malformed ones itself.
+                    || (data.composer && action.starts_with("create."))
+            });
         if !declared { return Err("Unknown plugin action".into()); }
         let reply = self.workers.lock().map_err(|e| e.to_string())?.get(id).ok_or("Plugin is stopped")?.request("action", json!({"id":action}))?;
         reply.recv_timeout(std::time::Duration::from_secs(16)).map_err(|_| "Plugin action timeout".to_owned())?

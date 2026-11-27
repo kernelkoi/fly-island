@@ -12,5 +12,6 @@ members = [
     "eye-care",
     "minimax",
     "device-battery/engine",
+    "dida365",
 ]
 resolver = "2"

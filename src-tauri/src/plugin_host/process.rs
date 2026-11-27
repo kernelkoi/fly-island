@@ -43,9 +43,13 @@ pub fn restart_delay(attempt: u32) -> Option<Duration> {
 
 fn supervise(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop: Arc<AtomicBool>, receiver: mpsc::Receiver<Request>, publish: Publish) {
     let mut attempt = 0;
+    // The last rows the plugin published. A crash or a restart must not wipe them: the UI would
+    // read the empty list as "the plugin has no tasks". They come back marked stale instead.
+    let mut last = Contributions::default();
     while !stop.load(Ordering::Acquire) {
-        publish(Contributions::default(), "starting");
-        if let Err(error) = run(directory, manifest, settings, log, &stop, &receiver, &publish) {
+        publish(stale_of(&last), "starting");
+        let started = Instant::now();
+        if let Err(error) = run(directory, manifest, settings, log, &stop, &receiver, &publish, &mut last) {
             let secrets: Vec<String> = manifest.settings.iter().filter(|s| s.kind == "secret")
                 .filter_map(|s| settings[&s.key].as_str().map(str::to_owned)).collect();
             log_stderr(format!("plugin worker: {error}\n").as_bytes(), log, &secrets);
@@ -54,16 +58,26 @@ fn supervise(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path
             }
         }
         if stop.load(Ordering::Acquire) { break; }
+        // A run that stayed up long enough was healthy: its next crash starts the backoff over,
+        // or a plugin that crashed six times over days would never come back.
+        if started.elapsed() >= Duration::from_secs(60) { attempt = 0; }
         let Some(delay) = restart_delay(attempt) else {
-            publish(Contributions::default(), "failed");
+            publish(stale_of(&last), "failed");
             return;
         };
-        publish(Contributions::default(), "restarting");
+        publish(stale_of(&last), "restarting");
         attempt = attempt.saturating_add(1);
         let until = Instant::now() + delay;
         while Instant::now() < until && !stop.load(Ordering::Acquire) { thread::sleep(Duration::from_millis(50)); }
     }
-    publish(Contributions::default(), if stop.load(Ordering::Acquire) { "stopped" } else { "failed" });
+    publish(stale_of(&last), if stop.load(Ordering::Acquire) { "stopped" } else { "failed" });
+}
+
+/// The last good rows, flagged as stale: the refresh that produced them failed.
+fn stale_of(last: &Contributions) -> Contributions {
+    let mut kept = last.clone();
+    kept.stale = true;
+    kept
 }
 
 fn plugin_command(directory: &Path, relative: &str) -> Result<Command, String> {
@@ -96,7 +110,8 @@ pub(super) fn disconnect_minimax(directory: &Path) -> Result<(), String> {
     Err("Could not disconnect MiniMax Code approval hooks".into())
 }
 
-fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop: &AtomicBool, requests: &mpsc::Receiver<Request>, publish: &Publish) -> Result<(), String> {
+#[expect(clippy::too_many_arguments, reason = "one worker's context: every argument is a distinct part of the same run, not a call graph")]
+fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop: &AtomicBool, requests: &mpsc::Receiver<Request>, publish: &Publish, last: &mut Contributions) -> Result<(), String> {
     let mut child = plugin_command(directory, &manifest.runtime.command)?
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn().map_err(|e| e.to_string())?;
@@ -156,13 +171,18 @@ fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop
                         if id == 0 && !ready {
                             if v["result"]["apiVersion"] != 1 { return Err("Plugin handshake failed".into()); }
                             ready = true;
-                            publish(Contributions::default(), "running");
+                            // Keep whatever the previous run left until this one publishes: an
+                            // empty list here would read as "the plugin has no tasks".
+                            publish(stale_of(last), "running");
                         } else if let Some((_, reply)) = pending.remove(&id) {
                             let value = v.get("result").cloned().ok_or_else(|| "Plugin action failed".to_owned());
                             let _ = reply.send(value);
                         }
                     } else if let Some(c) = contribution {
                         if !ready { return Err("Plugin published before initialize".into()); }
+                        // Only a fresh snapshot replaces the last good rows. A stale one is the
+                        // plugin's own copy of them, and may be empty after its restart.
+                        if !c.stale { *last = c.clone(); }
                         publish(c, "running");
                     }
                 }

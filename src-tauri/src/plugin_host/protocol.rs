@@ -16,6 +16,13 @@ pub struct Contributions {
     /// The plugin's own island page; null when it has nothing to show.
     #[serde(default)]
     pub panel: Option<Panel>,
+    /// The plugin can turn a `create.<YYYY-MM-DD>.<title>` action into a new row.
+    #[serde(default)]
+    pub composer: bool,
+    /// The rows are the last successful snapshot: the refresh that produced them failed, so
+    /// the UI shows them with a failure note instead of mistaking them for fresh.
+    #[serde(default)]
+    pub stale: bool,
 }
 
 /// What a plugin's island page shows. The host draws it with its own components: no HTML,
@@ -76,6 +83,26 @@ pub struct Quota {
 pub struct Session {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// "agent" (the default) is an AI agent session listed on the Agent page; "task" is a
+    /// to-do-like row the plugin page lists instead.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Local calendar day ("YYYY-MM-DD") a task row belongs on; agent sessions leave it null.
+    #[serde(default)]
+    pub due: Option<String>,
+    /// Provider list id a task row belongs to. The composer uses it to target the filtered
+    /// list instead of the provider's default inbox.
+    #[serde(default)]
+    pub list_id: Option<String>,
+    /// A repeating task: its `due` is the anchor day, and the wording (today vs. a date)
+    /// is the UI's to say, in the user's language.
+    #[serde(default)]
+    pub repeat: bool,
+    /// The provider's own importance for a task row (0 = none). The UI decides how to show it.
+    #[serde(default)]
+    pub priority: Option<i64>,
     pub cwd: Option<String>,
     pub status: String,
     pub updated_at: i64,
@@ -104,7 +131,8 @@ pub fn parse_publish(line: &str, manifest: &Manifest) -> Result<Option<Contribut
         return Err("Invalid RPC response".into());
     }
     if v["method"] != "publish" { return Err("Unsupported plugin method".into()); }
-    let c: Contributions = serde_json::from_value(v["params"].clone()).map_err(|_| "Invalid contribution".to_owned())?;
+    // The serde text names the offending field; the payload itself (task titles, paths) stays out of the log.
+    let c: Contributions = serde_json::from_value(v["params"].clone()).map_err(|e| format!("Invalid contribution: {e}"))?;
     if c.quota.len() > 32 || c.sessions.len() > 200 || c.notifications.len() > 100
         || c.panel.as_ref().is_some_and(|p| p.rows.len() > 16 || p.actions.len() > 4)
         || (!c.quota.is_empty() && !manifest.contributes.iter().any(|p| p == "quota"))
@@ -114,14 +142,26 @@ pub fn parse_publish(line: &str, manifest: &Manifest) -> Result<Option<Contribut
         return Err("Undeclared or excessive contributions".into());
     }
     let text = |s: &str| s.len() <= 4096 && !s.contains('\0');
-    let action = |value: &Option<String>| value.as_deref().is_none_or(text);
+    let option = |value: &Option<String>| value.as_deref().is_none_or(text);
+    let action = option;
     let unique = |ids: Vec<&str>| {
         let mut seen = std::collections::HashSet::new();
         ids.into_iter().all(|id| !id.is_empty() && seen.insert(id))
     };
     let percent = |p: Option<f64>| p.is_none_or(|v| v.is_finite() && (0.0..=100.0).contains(&v));
+    let iso_date = |value: &str| {
+        let bytes = value.as_bytes();
+        value.len() == 10
+            && bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes.iter().enumerate().all(|(index, byte)| {
+                if index == 4 || index == 7 { *byte == b'-' } else { byte.is_ascii_digit() }
+            })
+            && value[5..7].parse::<u32>().is_ok_and(|month| (1..=12).contains(&month))
+            && value[8..10].parse::<u32>().is_ok_and(|day| (1..=31).contains(&day))
+    };
     if c.quota.iter().any(|q| !text(&q.id) || !text(&q.label) || !percent(q.remaining_percent) || !percent(q.secondary_percent) || q.balance.as_deref().is_some_and(|b| !text(b)))
-        || c.sessions.iter().any(|s| !text(&s.id) || !text(&s.title) || !action(&s.action) || !["running", "waiting", "completed"].contains(&s.status.as_str()) || s.cwd.as_deref().is_some_and(|v| !text(v)))
+        || c.sessions.iter().any(|s| !text(&s.id) || !text(&s.title) || !action(&s.action) || !option(&s.detail) || !["running", "waiting", "completed"].contains(&s.status.as_str()) || s.cwd.as_deref().is_some_and(|v| !text(v)) || s.kind.as_deref().is_some_and(|k| k != "agent" && k != "task") || s.due.as_deref().is_some_and(|v| !iso_date(v)) || s.list_id.as_deref().is_some_and(|v| !text(v)) || s.priority.is_some_and(|p| !(0..=5).contains(&p)))
         || c.notifications.iter().any(|n| !action(&n.action) || [&n.id, &n.source_id, &n.app_name, &n.icon, &n.title, &n.body].iter().any(|s| !text(s)))
         || !unique(c.quota.iter().map(|q| q.id.as_str()).collect())
         || !unique(c.sessions.iter().map(|s| s.id.as_str()).collect())

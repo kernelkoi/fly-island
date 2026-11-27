@@ -29,6 +29,54 @@
   border-color: transparent;
 }
 
+/* The same mark as a button, for views that check the task off right here. The box keeps the
+   mark's size so the title does not shift; ::after only widens the clickable area. */
+.todo-day-row__check {
+  position: relative;
+  box-sizing: content-box; /* matches the mark span's box, so titles stay aligned */
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  color: var(--color-black);
+  background: transparent;
+  border: 1.5px solid var(--text-3);
+  border-radius: var(--corner-xs);
+  corner-shape: var(--corner-shape);
+  cursor: pointer;
+}
+
+.todo-day-row__check::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+
+.todo-day-row--done .todo-day-row__check {
+  background: var(--text-3);
+  border-color: transparent;
+}
+
+.todo-day-row__check:hover:not(:disabled) {
+  border-color: var(--text-1);
+}
+
+.todo-day-row--done .todo-day-row__check:hover:not(:disabled) {
+  background: var(--text-2);
+  border-color: transparent;
+}
+
+.todo-day-row__check:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.todo-day-row__check:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 .todo-day-row--scheduled .todo-day-row__mark {
   border-color: var(--todo-scheduled-color);
   border-style: dashed;

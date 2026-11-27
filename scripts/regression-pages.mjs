@@ -117,4 +117,11 @@ export const PAGES = [
   "tucked-hover.html",
   "translation-window.html?test=1&theme=dark",
   "translation-window.html?test=1&theme=light",
+  "plugin-dates.html",
+  "plugin-dates.html?lang=en",
+  "plugin-focus.html",
+  "plugin-priority.html",
+  "plugin-priority.html?lang=en",
+  "plugin-tasks.html",
+  "plugin-tasks.html?lang=en",
 ];

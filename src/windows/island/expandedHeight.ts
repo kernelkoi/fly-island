@@ -30,6 +30,8 @@ export function getShelfExpandedHeight(items: number) {
 }
 // Header, direction bar, a few lines of source, the result and the action row.
 const TRANSLATION_EXPANDED_ISLAND_HEIGHT = 420;
+// Plugin pages scroll inside this height, like the translation page.
+const PLUGINS_EXPANDED_ISLAND_HEIGHT = 420;
 // Settings fit their open page (useSettingsPageHeight): the island's padding, header and gap
 // around it, between a floor that keeps short pages from looking cramped and about the tallest
 // island the window allows, past which the page scrolls. The fallback before the first measure.
@@ -163,6 +165,8 @@ export function getExpandedIslandHeight({
         ? agentAlertRowHeight !== undefined
           ? getAgentAlertExpandedHeight(agentAlertRowHeight)
           : getAgentPageExpandedHeight(agentVisibleRows, agentUsageLines, agentSessionView, fontScale)
+      : page === "plugins"
+        ? Math.min(PLUGINS_EXPANDED_ISLAND_HEIGHT, maxPanelHeight)
       : page === "clipboard"
         ? getClipboardExpandedHeight(clipboardVisibleRows)
         : page === "plugin:device-battery" ? Math.min(420, maxPanelHeight)

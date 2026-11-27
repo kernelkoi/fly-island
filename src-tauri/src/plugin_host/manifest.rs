@@ -16,6 +16,9 @@ pub struct Manifest {
     pub id: String,
     pub name: Localized,
     pub description: Localized,
+    /// A name in the host's own icon set (e.g. "ticktick"); the host draws it, never the plugin.
+    #[serde(default)]
+    pub icon: Option<String>,
     pub version: String,
     pub api_version: u32,
     pub runtime: Runtime,
@@ -90,6 +93,11 @@ pub fn relative_path(text: &str) -> bool {
         && Path::new(text).components().all(|c| matches!(c, Component::Normal(_)))
 }
 
+fn icon_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 32
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 fn field_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 100 && id.as_bytes()[0].is_ascii_lowercase()
         && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'.' | b'_'))
@@ -113,7 +121,8 @@ impl Manifest {
     pub fn validate(&self) -> Result<(), String> {
         if !valid_id(&self.id) || self.api_version != 1 || semver::Version::parse(&self.version).is_err()
             || !relative_path(&self.runtime.command) || !self.runtime.command.ends_with(".exe")
-            || self.name.zh.is_empty() || self.name.en.is_empty() {
+            || self.name.zh.is_empty() || self.name.en.is_empty()
+            || self.icon.as_deref().is_some_and(|icon| !icon_name(icon)) {
             return Err("Invalid plugin identity, API version or executable path".into());
         }
         let allowed = ["network", "read-home-files", "write-home-files", "notifications", "quota", "sessions", "panel", "desktop-windows", "private-browser", "system-devices"];

@@ -28,6 +28,7 @@ import { DeviceDashboard } from "../../features/device-battery/DeviceDashboard";
 import { EyeCareIslandPanel } from "../../features/eye-care/EyeCareIslandPanel";
 import { PluginPanel } from "../../features/plugins/PluginPanel";
 import { FileShelfPanel } from "../../features/file-shelf/FileShelfPanel";
+import { PluginTasksPanel } from "../../features/plugins/PluginTasksPanel";
 import type { useFileShelf } from "../../features/file-shelf/useFileShelf";
 import { getTodoScrollStartRows } from "./layout";
 import { isPageEnabled, isPluginPage, pluginIdOfPage } from "./features";
@@ -157,6 +158,7 @@ export function IslandPages({
           onDeleteItems={deleteClipboardHistoryItems}
         />
       )}
+      {page === "plugins" && <PluginTasksPanel />}
       {page === "agents" && <AgentSessionsPanel sessions={agentSessions} view={settings.agentSessionView} sort={settings.agentSessionSort} group={settings.agentSessionGroup} archiveMotion={settings.agentArchiveMotion} cardEffects={settings.agentCardEffects} hostDisplay={settings.agentHostDisplay} showElapsed={settings.agentShowElapsed} showModel={settings.agentShowModel} showActivity={settings.agentShowActivity} unseen={unseenAgentSessions} removal={agentRemoval} reveal={alertedSession} showUsage={settings.agentShowUsage} usages={agentUsages} approvals={agentApprovals} />}
       {page === "translation" && <TranslationPanel isOpen={mode === "expanded"} onOpenSettings={() => openSettingsWindow("translation")} />}
       {page === "battery" && battery && <BatteryPanel snapshot={battery} estimate={batteryEstimate} history={settings.batteryHistoryEnabled ? batteryHistory : null} />}

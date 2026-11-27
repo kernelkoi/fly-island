@@ -88,13 +88,26 @@ pub async fn configure_plugins(developer_mode: bool, index_url: String, host: ta
     }
     host.persist(registry)
 }
+/// A pasted directory often carries quotes, a BOM or a stray leading space. Windows rejects all
+/// of them with "os error 123" before it looks at the directory, so a perfectly correct path
+/// reads as a bogus failure; strip them here instead of making the user hunt the character.
+fn clean_directory(text: &str) -> &str {
+    let trimmed = text.trim().trim_start_matches('\u{feff}').trim();
+    trimmed.trim_matches(|c: char| c.is_whitespace() || matches!(c, '"' | '\u{201c}' | '\u{201d}'))
+}
+
 #[tauri::command]
 pub async fn load_development_plugin(directory: String, host: tauri::State<'_, PluginHost>) -> Result<(), String> {
     let _guard = host.operation.lock().await;
     if !host.allows_development() { return Err("Developer mode is unavailable in this build".into()); }
     let mut registry = host.snapshot().registry;
     if !registry.developer_mode { return Err("Developer mode is disabled".into()); }
-    let directory = std::path::PathBuf::from(directory).canonicalize().map_err(|e| e.to_string())?;
+    let text = clean_directory(&directory);
+    if text.is_empty() { return Err("Enter the plugin directory".into()); }
+    let directory = std::path::PathBuf::from(text).canonicalize().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => "Plugin directory not found".to_string(),
+        _ => format!("Cannot open plugin directory: {e}"),
+    })?;
     let manifest = manifest::Manifest::read(&directory.join("fly-island-plugin.json"))?;
     if registry.installed.contains_key(&manifest.id) { return Err("Uninstall the existing plugin first".into()); }
     let id = manifest.id.clone();
