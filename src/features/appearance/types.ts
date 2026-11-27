@@ -57,6 +57,8 @@ export type CollapsedItem = "agent" | "lyrics" | "todo";
 export type CollapsedSlot = "pulse" | "text" | "mail" | "shelf" | "music" | "agents" | "clock" | "weather" | "battery";
 /** The page dots in the expanded island's header, which the user can drag into any order. */
 export type PageDot = "todo" | "music" | "clipboard" | "shelf" | "translation" | "battery";
+/** A header dot of the expanded island: a built-in page, the messages entry, the shared plugin tasks page, or a plugin's own page. */
+export type HeaderPage = PageDot | "qq" | "plugins" | `plugin:${string}`;
 
 export type IslandSettings = BatteryPreferences & {
   topEdgeLayoutVersion: 1;
@@ -259,8 +261,8 @@ export type IslandSettings = BatteryPreferences & {
   collapsedLayout: CollapsedSlot[];
   /** Slots dragged off the island in Appearance → On the island; never the text. */
   collapsedHidden: CollapsedSlot[];
-  /** Order of the page dots in the expanded island's header. */
-  pageOrder: PageDot[];
+  /** Order of the page dots in the expanded island's header, plugin pages among them. */
+  pageOrder: HeaderPage[];
   /** While a full-screen app (game, video, slides) is in front: no hover opening or focus, no message pop-ups. */
   gameDoNotDisturb: boolean;
   /** While a full-screen app is in front, the island tucks to the top edge and comes back after. */

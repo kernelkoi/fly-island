@@ -8,7 +8,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { I18nProvider } from "../../src/i18n";
 import type { IslandPage } from "../../src/windows/island/types";
-import type { PageButtonStyle, PageDot } from "../../src/features/appearance/types";
+import type { HeaderPage, PageButtonStyle } from "../../src/features/appearance/types";
 import type { UpdateState } from "../../src/features/updater/updaterController";
 import { syncUpdateTodo } from "../../src/features/todos/updateTodo";
 
@@ -52,7 +52,7 @@ function Fixture() {
   const [page, changePage] = useState<IslandPage>("todo");
   const [expanded, changeExpanded] = useState(false);
   const [style, changeStyle] = useState<PageButtonStyle>("icon");
-  const [order, changeOrder] = useState<PageDot[]>(["todo", "music", "clipboard", "shelf", "translation"]);
+  const [order, changeOrder] = useState<HeaderPage[]>(["todo", "music", "clipboard", "shelf", "translation"]);
   setPage = changePage;
   setExpanded = changeExpanded;
   setStyle = changeStyle;

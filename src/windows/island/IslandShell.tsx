@@ -6,7 +6,7 @@ import type { AgentSession } from "../../features/agent-status/session";
 import type { BatteryAlert } from "../../features/device-battery/lowBattery";
 import type { QuotaAlert } from "../../features/agent-status/quotaAlerts";
 import type { AgentVisualState } from "../../features/agent-status/status";
-import type { CollapsedItem, CollapsedSlot, IslandCornerShape, IslandShape, Material, PageButtonStyle, PageDot, TuckStyle } from "../../features/appearance/types";
+import type { CollapsedItem, CollapsedSlot, HeaderPage, IslandCornerShape, IslandShape, Material, PageButtonStyle, TuckStyle } from "../../features/appearance/types";
 import type { MediaState } from "../../features/media/api";
 import type { MessagePreview, MessageSource } from "../../features/messages/messagePreview";
 import type { MailController } from "../../features/messages/mail/MailPanel";
@@ -92,10 +92,10 @@ type IslandShellProps = {
   collapsedCover: string | null;
   /** Where the collapsed island's lyric line comes from. */
   lyricsSettings: LyricsSettings & { lyricsOffsetMs: number };
-  /** Order of the header's page dots, and saving a new one after a drag. */
-  pageOrder: PageDot[];
+  /** Order of the header's page dots, plugin pages among them, and saving a new one after a drag. */
+  pageOrder: HeaderPage[];
   pageButtonStyle: PageButtonStyle;
-  onPageOrderChange: (order: PageDot[]) => void;
+  onPageOrderChange: (order: HeaderPage[]) => void;
   /** Running agent session shown in place of the todo, or null. */
   agentSession: AgentSession | null;
   /** Agent sessions still working, shown in place of the tuck dot while the AI Agent switch is on. */

@@ -3,8 +3,8 @@ import { normalizeLyricsSettings } from "../media/lyrics/lyricsSettings.ts";
 import { normalizeBatteryPreferences } from "../battery/preferences.ts";
 import { DEFAULT_SETTINGS } from "./settingsDefaults.ts";
 import { normalizeOrder } from "../../utils/order.ts";
-import { AUTO_COLLAPSE_SECONDS, BROWSER_AUTO_TUCK_DELAY_SECONDS, TUCK_DELAY_SECONDS, TUCK_EDGE_HEIGHT, COLLAPSED_ITEMS, PAGE_DOTS, SHELF_CLEANUP_DAYS, oneOf } from "./settingsLimits.ts";
-import type { IslandSettings, LegacyIslandSettings } from "./types";
+import { AUTO_COLLAPSE_SECONDS, BROWSER_AUTO_TUCK_DELAY_SECONDS, TUCK_DELAY_SECONDS, TUCK_EDGE_HEIGHT, COLLAPSED_ITEMS, PAGE_DOTS, SHELF_CLEANUP_DAYS, isHeaderPage, oneOf } from "./settingsLimits.ts";
+import type { HeaderPage, IslandSettings, LegacyIslandSettings } from "./types";
 import { normalizeCollapsedHidden, normalizeCollapsedLayout } from "./collapsedLayout.ts";
 import { normalizeIdleText, normalizeTodoPendingDisplay } from "./idleText.ts";
 import { TODO_ROTATION_SECONDS, TODO_SCROLL_SPEED, MESSAGE_PREVIEW_SECONDS, MESSAGE_EXPAND_MAX_WIDTH, MESSAGE_EXPAND_MAX_HEIGHT, MESSAGE_EXPAND_SECONDS, GAME_NOTICE_SECONDS } from "./settingsLimits.ts";
@@ -78,7 +78,7 @@ export function normalizeBehaviorSettings(settings: LegacyIslandSettings | null 
     collapsedShowCover: settings?.collapsedShowCover !== false,
     collapsedLayout: normalizeCollapsedLayout(settings?.collapsedLayout),
     collapsedHidden: normalizeCollapsedHidden(settings?.collapsedHidden),
-    pageOrder: normalizeOrder(settings?.pageOrder, PAGE_DOTS),
+    pageOrder: normalizePageOrder(settings?.pageOrder),
     // Selected activities pause automatic tucking only with an explicit boolean setting.
     keepVisibleWhileAgentRunning: typeof settings?.keepVisibleWhileAgentRunning === "boolean"
       ? settings.keepVisibleWhileAgentRunning : DEFAULT_SETTINGS.keepVisibleWhileAgentRunning,
@@ -101,4 +101,16 @@ function steppedSeconds(value: unknown, range: { min: number; max: number; step:
   const precision = String(range.step).split(".")[1]?.length ?? 0;
   const rounded = Number((Math.round(value / range.step) * range.step).toFixed(precision));
   return Math.min(range.max, Math.max(range.min, rounded));
+}
+
+/**
+ * A saved header page order read back: unknown, repeated and non-string entries dropped, plugin
+ * pages kept as saved (they come and go with their plugin), and any built-in dot it lacks put at
+ * the end in its default place. Older saves held only the built-in dots, so plugin pages land
+ * after them until the user drags them elsewhere.
+ */
+function normalizePageOrder(value: unknown): HeaderPage[] {
+  const saved = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const kept = saved.filter((item, index): item is HeaderPage => isHeaderPage(item) && saved.indexOf(item) === index);
+  return [...kept, ...PAGE_DOTS.filter((dot) => !kept.includes(dot))];
 }

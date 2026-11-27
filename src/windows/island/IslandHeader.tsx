@@ -2,8 +2,9 @@ import { useCallback } from "react";
 import { usePointerReorder } from "../../components/reorder/usePointerReorder";
 import { PageButtonContent } from "../../features/appearance/PageButtonContent";
 import { PAGE_ICONS } from "../../features/appearance/pageIcons";
+import { isPageDot } from "../../features/appearance/settingsLimits";
 import { usePageButtonLabels } from "../../features/appearance/usePageButtonLabels";
-import type { PageButtonStyle, PageDot } from "../../features/appearance/types";
+import type { HeaderPage, PageButtonStyle } from "../../features/appearance/types";
 import { Bell, Bot, CircleDot, Minus, RotateCcw, Settings } from "lucide-react";
 import type { AgentVisualState } from "../../features/agent-status/status";
 import { useCommunityInvite } from "../../features/updater/useCommunityInvite";
@@ -21,10 +22,10 @@ type IslandHeaderProps = {
   isExpanded: boolean;
   page: IslandPage;
   features: IslandFeatures;
-  /** Order of the page dots; a drag saves a new one. */
-  pageOrder: PageDot[];
+  /** Order of the page dots, plugin pages among them; a drag saves a new one. */
+  pageOrder: HeaderPage[];
   pageButtonStyle: PageButtonStyle;
-  onPageOrderChange: (order: PageDot[]) => void;
+  onPageOrderChange: (order: HeaderPage[]) => void;
   showTitle: boolean;
   isDetached: boolean;
   agentVisualState: AgentVisualState;
@@ -139,8 +140,23 @@ export function IslandHeader({
   // A lone plugin's entry is that plugin's page, so it says the plugin's name rather than "Plugins".
   const pluginName = published.length === 1 ? published[0].manifest.name[locale] : null;
   // The page dots, in the order the user dragged them into; a dot can be dragged sideways.
-  // Translation has one while it is on, also when it opens in its own window.
-  const dots = pageOrder.filter((dot) => (dot === "translation" ? onOpenTranslator !== null : features[dot]));
+  // Translation has one while it is on, also when it opens in its own window. Plugin pages, the
+  // plugins page and the messages entry sit in the same row and drag just like the built-in ones;
+  // any the saved order lacks (a newly installed plugin, an old save) line up after them in the
+  // original order: plugin pages, then the plugins page, then messages last.
+  const pluginPages = features.pluginPages ?? [];
+  const pluginPageOn = (dot: HeaderPage) => pluginPages.some((info) => info.page === dot);
+  const dots: HeaderPage[] = [
+    ...pageOrder.filter((dot) => {
+      if (dot === "plugins") return isPageEnabled("plugins", features);
+      if (dot === "qq") return isPageEnabled("qq", features);
+      if (!isPageDot(dot)) return pluginPageOn(dot);
+      return dot === "translation" ? onOpenTranslator !== null : features[dot];
+    }),
+    ...pluginPages.filter((info) => !pageOrder.includes(info.page)).map((info) => info.page),
+    ...(isPageEnabled("plugins", features) && !pageOrder.includes("plugins") ? ["plugins" as const] : []),
+    ...(isPageEnabled("qq", features) && !pageOrder.includes("qq") ? ["qq" as const] : []),
+  ];
   const dotLabels = {
     todo: t.island.todoList,
     music: t.island.music,
@@ -150,7 +166,7 @@ export function IslandHeader({
     battery: t.island.pageNames.battery,
   };
   const reorderDots = useCallback(
-    (next: PageDot[]) => onPageOrderChange([...next, ...pageOrder.filter((dot) => !next.includes(dot))]),
+    (next: HeaderPage[]) => onPageOrderChange([...next, ...pageOrder.filter((dot) => !next.includes(dot))]),
     [onPageOrderChange, pageOrder],
   );
   const { containerRef: dotsRef, itemProps: dotProps, draggingId: draggingDot, wasDragged: wasDotDragged } =
@@ -196,43 +212,103 @@ export function IslandHeader({
         {agentInRow && agent}
         {labeled && (!agentInRow || showTitle) && title}
         {dots.map((dot) => {
-          const Icon = PAGE_ICONS[dot];
-          return (
-            <button
-              key={dot}
-              className={[
-                "dot-button",
-                `dot-button--${dot}`,
-                dotStyle,
-                page === dot ? "dot-button--active" : "",
-                draggingDot === dot ? "dot-button--dragging" : "",
-              ].filter(Boolean).join(" ")}
-              type="button"
-              aria-label={dot === "todo" && updatePending ? t.island.todoListWithUpdate : dotLabels[dot]}
-              aria-current={page === dot ? "page" : undefined}
-              data-tip={t.island.pageNames[dot]}
-              data-page-button={labeled ? dot : undefined}
-              data-page-button-current={labeled && page === dot ? "" : undefined}
-              {...dotProps(dot)}
-              onClick={(event) => {
-                event.stopPropagation();
-                // The click that ends dragging a dot to a new place does not open its page.
-                if (wasDotDragged()) return;
-                if (dot === "translation") onOpenTranslator?.();
-                else onPageChange(dot);
-              }}
-            >
-              {showIcons && <PageButtonContent
-                icon={<Icon size={16} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />}
-                label={labeled ? t.island.pageNames[dot] : undefined}
-              />}
-              {dot === "todo" && updatePending && <span className="island-update-dot" aria-hidden="true" />}
-            </button>
-          );
-        })}
-        {/* A plugin's page sits after the built-in ones: it is not reordered by dragging,
-            since the plugin list itself is the order. */}
-        {(features.pluginPages ?? []).map((info) => {
+          if (dot === "plugins") {
+            return (
+              <button
+                key="plugins"
+                className={[
+                  "dot-button",
+                  "dot-button--plugins",
+                  showIcons ? "dot-button--icon" : "dot-button--capsule",
+                  page === "plugins" ? "dot-button--active" : "",
+                  draggingDot === dot ? "dot-button--dragging" : "",
+                ].filter(Boolean).join(" ")}
+                type="button"
+                aria-label={pluginName ?? t.plugins.title}
+                aria-pressed={page === "plugins"}
+                data-tip={pluginName ?? t.plugins.title}
+                {...dotProps(dot)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  // The click that ends dragging a dot to a new place does not open its page.
+                  if (wasDotDragged()) return;
+                  onPageChange("plugins");
+                }}
+              >
+                {showIcons && <PluginIcon icon={pluginIcon} size={16} />}
+              </button>
+            );
+          }
+          if (dot === "qq") {
+            return (
+              <button
+                key="qq"
+                className={[
+                  "dot-button",
+                  "dot-button--messages",
+                  dotStyle,
+                  page === "qq" ? "dot-button--active" : "",
+                  draggingDot === dot ? "dot-button--dragging" : "",
+                ].filter(Boolean).join(" ")}
+                type="button"
+                aria-label={t.messages.label(messageBadgeLabel)}
+                aria-pressed={page === "qq"}
+                data-tip={t.messages.title}
+                data-page-button={labeled ? "qq" : undefined}
+                data-page-button-current={labeled && page === "qq" ? "" : undefined}
+                {...dotProps(dot)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  // The click that ends dragging a dot to a new place does not open its page.
+                  if (wasDotDragged()) return;
+                  onOpenMessages(wechatPending ? "wechat" : telegramPending ? "telegram" : officePending ?? "qq");
+                }}
+              >
+                {showIcons && <PageButtonContent
+                  icon={<Bell size={16} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />}
+                  label={labeled ? t.messages.title : undefined}
+                />}
+                {(qqNotificationCount > 0 || wechatPending || telegramPending || officePending) && <span className="island-message-button__dot" aria-hidden="true" />}
+              </button>
+            );
+          }
+          if (isPageDot(dot)) {
+            const Icon = PAGE_ICONS[dot];
+            return (
+              <button
+                key={dot}
+                className={[
+                  "dot-button",
+                  `dot-button--${dot}`,
+                  dotStyle,
+                  page === dot ? "dot-button--active" : "",
+                  draggingDot === dot ? "dot-button--dragging" : "",
+                ].filter(Boolean).join(" ")}
+                type="button"
+                aria-label={dot === "todo" && updatePending ? t.island.todoListWithUpdate : dotLabels[dot]}
+                aria-current={page === dot ? "page" : undefined}
+                data-tip={t.island.pageNames[dot]}
+                data-page-button={labeled ? dot : undefined}
+                data-page-button-current={labeled && page === dot ? "" : undefined}
+                {...dotProps(dot)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  // The click that ends dragging a dot to a new place does not open its page.
+                  if (wasDotDragged()) return;
+                  if (dot === "translation") onOpenTranslator?.();
+                  else onPageChange(dot);
+                }}
+              >
+                {showIcons && <PageButtonContent
+                  icon={<Icon size={16} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />}
+                  label={labeled ? t.island.pageNames[dot] : undefined}
+                />}
+                {dot === "todo" && updatePending && <span className="island-update-dot" aria-hidden="true" />}
+              </button>
+            );
+          }
+          const info = pluginPages.find((entry) => entry.page === dot);
+          if (!info) return null;
           const Icon = PLUGIN_PANEL_ICONS[info.icon];
           const label = info.name[locale];
           return (
@@ -243,13 +319,17 @@ export function IslandHeader({
                 "dot-button--plugin",
                 showIcons ? "dot-button--icon" : "dot-button--capsule",
                 page === info.page ? "dot-button--active" : "",
+                draggingDot === dot ? "dot-button--dragging" : "",
               ].filter(Boolean).join(" ")}
               type="button"
               aria-label={label}
               aria-current={page === info.page ? "page" : undefined}
               data-tip={label}
+              {...dotProps(dot)}
               onClick={(event) => {
                 event.stopPropagation();
+                // The click that ends dragging a dot to a new place does not open its page.
+                if (wasDotDragged()) return;
                 onPageChange(info.page);
               }}
             >
@@ -258,54 +338,6 @@ export function IslandHeader({
             </button>
           );
         })}
-        {/* The plugins page (a plugin's tasks) and messages sit with the page buttons, after the
-            draggable ones; they are not reordered. */}
-        {isPageEnabled("plugins", features) && (
-          <button
-            className={[
-              "dot-button",
-              "dot-button--plugins",
-              showIcons ? "dot-button--icon" : "dot-button--capsule",
-              page === "plugins" ? "dot-button--active" : "",
-            ].filter(Boolean).join(" ")}
-            type="button"
-            aria-label={pluginName ?? t.plugins.title}
-            aria-pressed={page === "plugins"}
-            data-tip={pluginName ?? t.plugins.title}
-            onClick={(event) => {
-              event.stopPropagation();
-              onPageChange("plugins");
-            }}
-          >
-            {showIcons && <PluginIcon icon={pluginIcon} size={16} />}
-          </button>
-        )}
-        {isPageEnabled("qq", features) && (
-          <button
-            className={[
-              "dot-button",
-              "dot-button--messages",
-              dotStyle,
-              page === "qq" ? "dot-button--active" : "",
-            ].filter(Boolean).join(" ")}
-            type="button"
-            aria-label={t.messages.label(messageBadgeLabel)}
-            aria-pressed={page === "qq"}
-            data-tip={t.messages.title}
-            data-page-button={labeled ? "qq" : undefined}
-            data-page-button-current={labeled && page === "qq" ? "" : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenMessages(wechatPending ? "wechat" : telegramPending ? "telegram" : officePending ?? "qq");
-            }}
-          >
-            {showIcons && <PageButtonContent
-              icon={<Bell size={16} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />}
-              label={labeled ? t.messages.title : undefined}
-            />}
-            {(qqNotificationCount > 0 || wechatPending || telegramPending || officePending) && <span className="island-message-button__dot" aria-hidden="true" />}
-          </button>
-        )}
         {labeled && collapseTarget}
       </div>
       {!labeled && collapseTarget}

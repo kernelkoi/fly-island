@@ -1,5 +1,5 @@
 // The ranges and choices island settings are kept within, and the fallbacks they rest on.
-import type { AgentQuotaSource, AgentSessionGroup, AgentSessionSort, CollapsedItem, CollapsedSlot, PageDot } from "./types";
+import type { AgentQuotaSource, AgentSessionGroup, AgentSessionSort, CollapsedItem, CollapsedSlot, HeaderPage, PageDot } from "./types";
 
 export const AGENT_SESSION_SORTS: readonly AgentSessionSort[] = ["status", "recent", "firstSeen"];
 export const AGENT_SESSION_GROUPS: readonly AgentSessionGroup[] = ["computer", "project", "none"];
@@ -99,6 +99,16 @@ export const COLLAPSED_ITEMS: readonly CollapsedItem[] = ["agent", "lyrics", "to
 export const COLLAPSED_SLOTS: readonly CollapsedSlot[] = ["pulse", "text", "mail", "shelf", "music", "agents", "clock", "weather", "battery"];
 /** The header's page dots in their default order; translation joined last (2026-11-11). */
 export const PAGE_DOTS: readonly PageDot[] = ["todo", "music", "clipboard", "shelf", "translation", "battery"];
+
+/** `value` when it is one of the built-in page dots. */
+export function isPageDot(value: string): value is PageDot {
+  return (PAGE_DOTS as readonly string[]).includes(value);
+}
+
+/** `value` when it can sit in the header's page order: a built-in dot, the messages entry, the plugin page, or a plugin's own page. */
+export function isHeaderPage(value: string): value is HeaderPage {
+  return isPageDot(value) || value === "qq" || value === "plugins" || value.startsWith("plugin:");
+}
 
 /** `value` when it is one of `allowed`, else `fallback`: a saved choice from an older or newer build. */
 export function oneOf<T>(allowed: readonly T[], value: unknown, fallback: T): T {
