@@ -125,8 +125,22 @@ fn only_tasks_the_provider_reports_as_done_get_a_completion_time() {
 }
 
 #[test]
-fn done_rows_follow_the_open_rows_and_undo_instead_of_completing() {
-    let mut sessions = build_sessions(&[open_task("t1", "没做的活", None, 1)], ROW_CAP);
+fn a_verified_lookup_counts_only_a_completion_the_provider_reports_for_today() {
+    let today = Local::now().date_naive();
+    let now = now_millis();
+    let done = json!({"id": "t1", "status": 2, "completedTime": now});
+    assert_eq!(verified_completion(&done, today), Some(now));
+    // completedTime 在撤销后可能残留旧值：status 0 就是没完成。
+    let open = json!({"id": "t2", "status": 0, "completedTime": now});
+    assert_eq!(verified_completion(&open, today), None);
+    // 昨天完成的，不进今天的已完成分组。
+    let yesterday = now - 24 * 60 * 60 * 1000;
+    let old = json!({"id": "t3", "status": 2, "completedTime": yesterday});
+    assert_eq!(verified_completion(&old, today), None);
+}
+
+#[test]
+fn done_rows_follow_the_open_rows_and_undo_instead_of_completing() {    let mut sessions = build_sessions(&[open_task("t1", "没做的活", None, 1)], ROW_CAP);
     append_done(&mut sessions, &[done_entry("p1:t9", "刚做完的活", 1_700_000_000_000)]);
     assert_eq!(sessions.len(), 2);
     assert_eq!(sessions[0]["id"], json!("p1:t1"));

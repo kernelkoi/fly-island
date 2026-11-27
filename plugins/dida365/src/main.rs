@@ -13,6 +13,9 @@ const ROW_CAP: usize = 200;
 const CHECK_LIMIT: usize = 20;
 /// Today's done group is a convenience, not an archive.
 const DONE_CAP: usize = 50;
+/// How many polls a vanished row may fail its single-task lookup before the plugin stops asking.
+/// A provider that keeps failing would otherwise hold a slot in the check budget forever.
+const VERIFY_RETRIES: u8 = 3;
 
 #[derive(Clone, Debug)]
 struct TaskEntry {
@@ -68,6 +71,8 @@ impl DoneEntry {
 struct PluginState {
     last_open: HashMap<String, TaskEntry>,
     done: Vec<DoneEntry>,
+    /// Failed lookups per vanished row, dropped once the row settles or `VERIFY_RETRIES` is hit.
+    verify_misses: HashMap<String, u8>,
     /// The last payload published, so a failed refresh still has something true to show.
     last: Option<Value>,
 }
@@ -238,16 +243,22 @@ fn fetch_project_tasks(token: &str, project_id: &str, project_name: &str) -> Res
     Ok(tasks.iter().filter_map(|task| entry_from_task(task, project_id, project_name)).collect())
 }
 
-/// The one reliable source of a completed task's status and real `completedTime`.
-fn fetch_task(token: &str, project_id: &str, task_id: &str) -> Result<Value, String> {
-    let response = ureq::get(&format!("{API_BASE}/project/{project_id}/task/{task_id}"))
+/// The one reliable source of a completed task's status and real `completedTime`. `Ok(None)` means
+/// the provider no longer knows the task (deleted, or moved to another list): there is nothing left
+/// to verify, so the caller forgets the row instead of asking about it on every poll.
+fn fetch_task(token: &str, project_id: &str, task_id: &str) -> Result<Option<Value>, String> {
+    let response = match ureq::get(&format!("{API_BASE}/project/{project_id}/task/{task_id}"))
         .set("Authorization", &project_token_header(token))
         .set("Accept", "application/json")
         .timeout(Duration::from_secs(10))
         .call()
-        .map_err(|error| format!("TickTick task lookup failed: {error}"))?;
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(404 | 410, _)) => return Ok(None),
+        Err(error) => return Err(format!("TickTick task lookup failed: {error}")),
+    };
 
-    response.into_json().map_err(|error| format!("TickTick task payload invalid: {error}"))
+    response.into_json().map(Some).map_err(|error| format!("TickTick task payload invalid: {error}"))
 }
 
 fn build_sessions(tasks: &[TaskEntry], cap: usize) -> Vec<Value> {
@@ -422,6 +433,19 @@ fn create_task(token: &str, date: NaiveDate, title: &str, project_id: Option<&st
     Ok(json!(true))
 }
 
+/// The completion time a single-task lookup reports today, or `None` when the task is still open
+/// or was finished on another day. Only `status` says whether the task is done; `completedTime`
+/// survives an undo and cannot stand in for it.
+fn verified_completion(task: &Value, today: NaiveDate) -> Option<i64> {
+    let completed_at = parse_epoch_millis(&task["completedTime"])
+        .or_else(|| parse_epoch_millis(&task["modifiedTime"]))
+        .unwrap_or_else(now_millis);
+    if task["status"].as_i64().unwrap_or(0) == 0 || local_date_of(completed_at) != Some(today) {
+        return None;
+    }
+    Some(completed_at)
+}
+
 fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> {
     let mut projects = fetch_projects(token)?;
     // The project list usually omits the inbox, but its special id still exposes its data.
@@ -454,7 +478,8 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
     // A row that vanished from the open list either completed or was deleted, and only the
     // provider can say which. Verifying a few of them per poll keeps a bulk delete from turning
     // into a burst of requests. The ones not checked yet stay in `last_open`, so a bulk
-    // completion is confirmed over the next rounds instead of being lost.
+    // completion is confirmed over the next rounds instead of being lost. A 404/410 settles the
+    // row as gone and a transport error retries a few times, so no row holds a check slot forever.
     let vanished: Vec<String> = state.last_open.keys().filter(|key| !open_keys.contains(*key)).cloned().collect();
     let mut unchecked: Vec<String> = Vec::new();
     for key in vanished.iter().take(CHECK_LIMIT) {
@@ -464,18 +489,25 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
         let Some(known) = state.last_open.get(key) else {
             continue;
         };
-        let Ok(task) = fetch_task(token, &known.project_id, &known.id) else {
-            // The lookup failed: the task may well be there. Keep it for the next round.
-            unchecked.push(key.clone());
-            continue;
+        let task = match fetch_task(token, &known.project_id, &known.id) {
+            // Deleted or moved elsewhere: nothing left to verify. Leaving the key out of the
+            // rebuilt `last_open` forgets the row for good instead of asking every round.
+            Ok(None) => continue,
+            Ok(Some(task)) => task,
+            Err(_) => {
+                // A transport error says nothing about the task itself: retry, but not forever.
+                let misses = state.verify_misses.entry(key.clone()).or_insert(0);
+                *misses = misses.saturating_add(1);
+                if *misses < VERIFY_RETRIES {
+                    unchecked.push(key.clone());
+                }
+                continue;
+            }
         };
-        let completed_at = parse_epoch_millis(&task["completedTime"])
-            .or_else(|| parse_epoch_millis(&task["modifiedTime"]))
-            .unwrap_or_else(now_millis);
-        if task["status"].as_i64().unwrap_or(0) == 0 || local_date_of(completed_at) != Some(today) {
+        let Some(completed_at) = verified_completion(&task, today) else {
             // Still open, or finished on another day: not news. Either way it needs no further check.
             continue;
-        }
+        };
         state.done.push(DoneEntry::from_task(known, completed_at));
     }
     // The rows this round had no time to check, plus the ones whose check failed: they stay
@@ -507,6 +539,10 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
             state.last_open.insert(key.clone(), entry.clone());
         }
     }
+    // Retry counts belong only to rows still waiting for a verdict; a settled or forgotten row
+    // takes its count with it.
+    let waiting: HashSet<String> = state.last_open.keys().cloned().collect();
+    state.verify_misses.retain(|key, _| waiting.contains(key));
 
     let mut sessions = build_sessions(&open, ROW_CAP);
     append_done(&mut sessions, &state.done);
