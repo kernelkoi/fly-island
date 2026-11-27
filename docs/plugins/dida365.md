@@ -1,7 +1,7 @@
 # 滴答清单插件需求与开发文档
 
 > 适用范围：fly-island（Fly Island）滴答清单插件 `dida365`
-> 文档版本：v2.5（2026-11-27）
+> 文档版本：v2.6（2026-11-27）
 > 定位：**需求层冻结，适配层可变**。以后重写、换语言、跟上游插件平台升级，都以本文第 2、3 节的可见行为为准；第 6 节的平台适配细节可以随时替换。
 > 代码基线：插件 manifest `0.2.0`，宿主插件 API `apiVersion 1`。
 > 称谓说明：整篇叫「需求与开发文档」（产品需求 + 实现规格）；第 1 节是「项目概要」（背景、目标、范围），第 2 节才是「需求清单」（Requirements）。「项目概要」不承担逐条验收，别把两者混用。
@@ -134,7 +134,7 @@
 
 ### R06 勾选完成
 
-- **规则**：每行左侧方形勾选框（复用内置待办的行样式）；点击调宿主 `run_plugin_action`，插件的 action 名固定为 `complete.<projectId>.<taskId>`；插件收到后 `POST /open/v1/project/{pid}/task/{tid}/complete`，然后立刻重新 `publish`：该行从待办列表移到「已完成」分组（见 R19），不是凭空消失。
+- **规则**：每行左侧方形勾选框（复用内置待办的行样式）；点击调宿主 `run_plugin_action`，插件的 action 名固定为 `complete.<projectId>.<taskId>`；插件收到后 `POST /open/v1/project/{pid}/task/{tid}/complete`，然后用内存里的行直接重新 `publish`（不为一次勾选全量拉取）：该行从待办列表移到「已完成」分组（见 R19），不是凭空消失。
 - **边界**：该行没有 action 的，勾选框禁用；请求期间禁用按钮，不重复提交（重复完成在滴答侧是幂等的，但别制造多余请求）。
 - **验收（已达成）**：正常网络下勾选后 ≤3 秒该行移到「已完成」分组（SDK 在 action 后立即重 poll）；token 错误或断网时行内显示宿主返回的错误原文（`role="alert"`），勾选按钮在请求期间禁用。
 - **落点**：`main.rs` / `complete_task`；`PluginTasksPanel.tsx` / `TaskRow`；`PluginCalendar.tsx` 的当日行。
@@ -220,7 +220,7 @@
 - **日期**：待办视图默认今天，且**在提交那一刻取当天**（窗口开着跨过午夜，不会写到前一天）；日历视图固定使用选中日期。
 - **目标清单**：跟随当前清单筛选。筛了某清单且该清单的行带 `listId` → 动作 `create.<日期>.list:<listId>.<标题>`；选「全部」或没有 `listId` → `create.<日期>.<标题>`，由插件落到默认收集箱。
 - **交互**：回车提交（中文输入法组合态的回车不提交）；空标题不提交；标题做 trim；成功后清空输入；失败保留文本供重试。
-- **插件侧**：`POST /open/v1/task`，body `{ "title", "dueDate": "<日期>T00:00:00+0000", "isAllDay": true, "projectId"? }`；成功后**立刻重新 `publish` 一次快照**，新行不用等下一轮轮询。
+- **插件侧**：`POST /open/v1/task`，body `{ "title", "dueDate": "<日期>T00:00:00+0000", "isAllDay": true, "projectId"? }`；成功后**只重取目标清单一次**并立刻 `publish` 快照，新行不用等下一轮轮询。
 - **长度与转义**：标题上限必须前后端一致；标题里的点号要保留（`create.<日期>.<标题>` 只按前两个点切分，`list:` 形式再多切一层）。
 - **验收**：选「全部」添加 → 进收集箱；筛「计划」添加 → 进计划；跨午夜后添加 → 落到新一天；标题含「.」正常；超长中文标题有明确提示且输入不被清空。
 - **落点**：`src/features/plugins/PluginQuickAdd.tsx`；`main.rs` / `parse_create_action`、`create_task`；协议 `Contributions.composer`、`Session.listId`；SDK `task(..., list_id)`；宿主 `service.rs` / `action`（`composer` 已发布时放行 `create.*`，否则前端提交必然报 `Unknown plugin action`）。
@@ -238,7 +238,7 @@
 - **日历视图同样可勾选和撤销**：右栏每行**左边的方框**就是勾选框（未完成点完成、已完成点撤销），右边不再放勾选按钮；失败时右栏底部给出宿主错误原文，行不动。
 - **撤销**：action 名为 `reopen.<projectId>.<taskId>`；插件 `POST /open/v1/task/{taskId}`，body `{"id": "<taskId>", "projectId": "<pid>", "status": 0}`（**必须带 `projectId`**，否则 404 `task not found`）；成功后立即重新 `publish`。
 - **怎么知道任务完成了**：`GET /open/v1/project/{id}/data` 永远只返回未完成任务，**没有**「读已完成任务」的接口（详见附录 A）。所以插件记住上一轮发布过的任务 id，本轮消失的那些逐条 `GET /open/v1/project/{pid}/task/{tid}` 复核：`status ≠ 0` 才算完成，取真实 `completedTime`；`404` / `410` 表示任务已被删除或移走，直接忘记这一行（不再复查）；网络或解析失败保留重试，连续 3 轮失败后放弃；仍 `status = 0`、或不是今天完成的，都不进分组。单轮最多复核 20 条，避免批量删除把请求打成突发。
-- **已知代价**（可接受）：插件没运行期间、或在别的设备上完成的任务，不会出现在分组里（没有 id 可复核）；撤销后滴答会残留旧的 `completedTime` 字段，判断完成状态**只看 `status`**，不看这个字段。动作成功后立即刷新，刷新失败时重发上一次快照并带 `stale`，界面上会显示「刷新失败，显示的是上次的数据」，不会静默停在用户刚点过的那一行（`0.1.9`）。
+- **已知代价**（可接受）：插件没运行期间、或在别的设备上完成的任务，不会出现在分组里（没有 id 可复核）；撤销后滴答会残留旧的 `completedTime` 字段，判断完成状态**只看 `status`**，不看这个字段。动作成功后立即刷新：完成与撤销直接用内存里的行构造快照（不再为一次点击全量拉取），内存里没有这一行时才回到全量刷新；刷新失败时重发上一次快照并带 `stale`，界面上会显示「刷新失败，显示的是上次的数据」，不会静默停在用户刚点过的那一行（`0.1.9`）。
 - **边界**：已完成行占用的额度从 200 条上限里扣（未完成任务优先，见 R14）；分组最多 50 条，跨到第二天自动清空；同一任务在别处被重新打开时，本轮就从分组里移除，不会两处都显示。
 - **验收**：勾一条 → 行移到「已完成 1」，未完成列表少一条，进度分母不变；再点这条的勾 → 回到原位、分组消失；断网或 token 错误时点勾，行内显示宿主错误原文且行不动。
 - **落点**：`plugins/dida365/src/main.rs`（`PluginState` 消失差集 + `fetch_task` 复核、`done_row`、`reopen_task`、`parse_id_action`）；`PluginTasksPanel.tsx`（`openRows` / `doneRows` 分组、撤销按钮）；`PluginTasksPanel.css` 的 `.plugin-tasks__done*`；`TodoDayRow.tsx` 的 `toggle`（行首方框可点）与 `TodoDayRow.css` 的 `.todo-day-row__check`；`PluginCalendar.tsx` 传 `toggle` 而非右侧 `action`；i18n `completedGroup` / `reopenTask`。
@@ -516,7 +516,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 
 | 项 | 位置 | 覆盖 |
 |---|---|---|
-| 插件单元测试（12 个） | `plugins/dida365/src/tests.rs`（`cargo test --manifest-path plugins/Cargo.toml -p dida365`） | 日期换算、重复归今天、日历日与锚点、创建动作解析（含标题点号、非法日期）、完成时间只取 `status ≠ 0`、已完成行的 `reopen` 动作、200 额度优先给未完成、`reopen` id 切分、优先级 0 / 1 / 3 / 5 原样落到未完成行与已完成行 |
+| 插件单元测试（13 个） | `plugins/dida365/src/tests.rs`（`cargo test --manifest-path plugins/Cargo.toml -p dida365`） | 日期换算、重复归今天、日历日与锚点、创建动作解析（含标题点号、非法日期）、完成时间只取 `status ≠ 0`、已完成行的 `reopen` 动作、200 额度优先给未完成、`reopen` id 切分、优先级 0 / 1 / 3 / 5 原样落到未完成行与已完成行 |
 | 宿主协议测试 | `src-tauri/src/plugin_host/tests.rs` | `kind` / `due` / `listId` / `priority`（0–5）/ `status: completed` 解析与校验、`composer` / `stale` 字段、重启退避 |
 | 排序单测（6 个） | `tests/unit/plugin-sort.test.mjs`（`pnpm check` 中的 `node --test`） | 到期日顺序（逾期恒置顶、同日按最近改动）、最近改动降序、清单名 + 到期、优先级高→中→低→无且同档按到期、四个档位的映射、`sortModesFor()` 在单清单时去掉「按清单」 |
 | 日期筛选单测（8 个） | `tests/unit/plugin-date-filter.test.mjs`（`pnpm check` 中的 `node --test`） | `shiftDay` 跨月 / 跨年 / DST、全部不过滤无日期与 Agent 行、今天 / 明天、未来7天含今天且第 8 天在外、逾期按日期且排除重复任务、重复任务过去锚点归今天、日期窗口只保留有日期的行 |
@@ -562,6 +562,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | v2.3 | 2026-11-18 | 新增 R22 优先级：协议 `Session.priority`（宿主收 0–5）、插件解析 0 / 1 / 3 / 5、标题前内联短标记（「无」不画）、排序菜单加第四项「优先级」（默认仍是到期日）；R21 修正：正在做的行保留怀表（此前点过开始就再也开不了计时），插件焦点直接占住折叠岛待办位，不被 Agent 会话或歌词挤掉；宿主修正：崩溃 / 重启期间保留上次快照（含握手时不再发空快照）、失败重试成功后重置退避、消失任务超出单轮复核额度时保留到下一轮；插件 `0.2.0`；插件单测 10 → 11、排序单测 4 → 6、插件页回归 101 检查，新增 `plugin-priority` 回归（10 检查）与 `plugin-focus` 回归（8 检查） |
 | v2.4 | 2026-11-18 | 新增 R23 日期标签：添加框上方一排 `全部 / 今天 / 明天 / 未来7天 / 逾期`，与清单筛选「且」；按本地日期判定，重复任务过去锚点归今天，未来7天含今天（第 7 天在内、第 8 天在外）；只有发布 `due` 的插件块显示，日历视图不显示；窗口为空时快速添加仍进当前清单；新增 `pluginDateFilter.ts` / `PluginDateChips.tsx`、8 个单测与 `plugin-dates` 回归（15 检查 × 中英），插件页回归 101 → 102 检查 |
 | v2.5 | 2026-11-27 | R19 实现修正（需求不变）：消失任务的单条复核把 `404` / `410` 当作终态（任务已删除或移走，直接忘记，不再每轮重查），网络 / 解析失败最多重试 3 轮；此前删除的任务会被当作临时失败永久保留，累计超过 20 条后占满每轮复核名额，「已完成 N」会静默失效。新增 `verified_completion` 与复核判定单测，插件单测 11 → 12 |
+| v2.6 | 2026-11-27 | 动作后不再全量 fan-out（需求不变）：完成 / 撤销用 `snapshot_from_memory` 从内存状态直接重发（0 次请求），快速添加只重取目标清单（1–2 次），内存里没有该行时才回退全量刷新。新增 `published` 记录上次发布过的未完成行，防止待复核的消失行被动作带回页面。此前每次点击要发 1 + N 个请求并可能撞上宿主 15 秒 action 超时。插件单测 12 → 13 |
 
 ---
 
@@ -589,8 +590,8 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `plugins/dida365/src/main.rs` | 620 | 拉取、收集箱、分桶、发布、快速创建（`parse_create_action` / `create_task`）、完成与撤销动作、已完成分组复核（`PluginState` / `fetch_task` / `verified_completion` / `done_row`）、消失任务的跨轮复核与优先级解析（`parse_priority`） |
-| `plugins/dida365/src/tests.rs` | 185 | 12 个单测（日期换算、重复归今天、完成时间、复核结果判定、`reopen` 动作、200 额度、创建解析、优先级档位） |
+| `plugins/dida365/src/main.rs` | 704 | 拉取、收集箱、分桶、发布、快速创建（`parse_create_action` / `create_task`）、完成与撤销动作、动作后的本地快照（`snapshot_from_memory` / `refresh_list` / `refresh`）、已完成分组复核（`PluginState` / `fetch_task` / `verified_completion` / `done_row`）、消失任务的跨轮复核与优先级解析（`parse_priority`） |
+| `plugins/dida365/src/tests.rs` | 207 | 13 个单测（日期换算、重复归今天、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、优先级档位） |
 | `plugins/dida365/fly-island-plugin.json` | 31 | id / 名称 / 图标 / 权限 / 设置（`0.2.0`） |
 | `plugins/sdk/src/lib.rs` | 303 | `task()` 构造器（含 `listId` / `repeat` / `priority`）、`run()` 生命周期（含失败缓存与 `stale()`）、`interval` 读取、发布裁剪 |
 | `src-tauri/src/plugin_host/protocol.rs` | 126 | 会话字段与校验（`kind` / `due` / `listId` / `repeat` / `priority`）、`composer` 与 `stale` 字段 |

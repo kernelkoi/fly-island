@@ -162,6 +162,28 @@ fn the_done_group_only_uses_what_the_open_rows_leave() {
 }
 
 #[test]
+fn a_snapshot_from_memory_hides_unpublished_rows_and_draws_a_completed_row_once() {
+    let mut state = PluginState::default();
+    state.published.insert("p1:t1".into());
+    state.last_open.insert("p1:t1".into(), open_task("t1", "没做的活", None, 1));
+    // 消失后还在等复核的行不在已发布快照里，不能因为一次动作重新出现。
+    state.last_open.insert("p1:t2".into(), open_task("t2", "消失待复核", None, 2));
+    // 刚完成的行仍留在 last_open 里，重发时只能以已完成行的形式出现一次。
+    let completed = open_task("t3", "刚做完的活", None, 3);
+    state.published.insert("p1:t3".into());
+    state.last_open.insert("p1:t3".into(), completed.clone());
+    state.done.push(DoneEntry::from_task(&completed, 1_700_000_000_000));
+
+    let snapshot = snapshot_from_memory(&state);
+    let sessions = snapshot["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions.iter().any(|session| session["id"] == json!("p1:t1")));
+    assert!(!sessions.iter().any(|session| session["id"] == json!("p1:t2")));
+    assert_eq!(sessions.iter().filter(|session| session["id"] == json!("p1:t3")).count(), 1);
+    assert_eq!(sessions.iter().find(|session| session["id"] == json!("p1:t3")).unwrap()["status"], json!("completed"));
+}
+
+#[test]
 fn only_the_providers_four_priority_levels_survive_the_round_trip() {
     // 滴答用 0 / 1 / 3 / 5 表示无 / 低 / 中 / 高；其他值一律当作「无」，不凭空造档位。
     for (raw, expected) in [(0, 0), (1, 1), (3, 3), (5, 5), (2, 0), (4, 0)] {

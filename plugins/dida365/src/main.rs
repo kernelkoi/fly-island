@@ -73,6 +73,9 @@ struct PluginState {
     done: Vec<DoneEntry>,
     /// Failed lookups per vanished row, dropped once the row settles or `VERIFY_RETRIES` is hit.
     verify_misses: HashMap<String, u8>,
+    /// Keys of the open rows in the last published snapshot. `last_open` also holds vanished rows
+    /// still waiting for a reply, which must not come back to the page when an action republishes.
+    published: HashSet<String>,
     /// The last payload published, so a failed refresh still has something true to show.
     last: Option<Value>,
 }
@@ -339,6 +342,25 @@ fn append_done(sessions: &mut Vec<Value>, done: &[DoneEntry]) {
     }
 }
 
+/// The snapshot the current memory describes: the open rows that were on the page, plus today's
+/// done group. Actions republish through this instead of a full poll, so a click never waits on
+/// the provider's whole project list, and a completed row is drawn once, as done.
+fn snapshot_from_memory(state: &PluginState) -> Value {
+    let done_keys: HashSet<&str> = state.done.iter().map(|entry| entry.key.as_str()).collect();
+    let open: Vec<TaskEntry> = state
+        .last_open
+        .iter()
+        .filter(|(key, _)| state.published.contains(*key) && !done_keys.contains(key.as_str()))
+        .map(|(_, entry)| entry.clone())
+        .collect();
+    let mut sessions = build_sessions(&open, ROW_CAP);
+    append_done(&mut sessions, &state.done);
+    if sessions.is_empty() {
+        return json!({ "composer": true });
+    }
+    json!({ "sessions": sessions, "composer": true })
+}
+
 fn complete_task(token: &str, project_id: &str, task_id: &str) -> Result<Value, String> {
     let url = format!("{API_BASE}/project/{project_id}/task/{task_id}/complete");
     let response = ureq::post(&url)
@@ -475,6 +497,7 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
     }
 
     let open_keys: HashSet<String> = open.iter().map(|entry| format!("{}:{}", entry.project_id, entry.id)).collect();
+    state.published = open_keys.clone();
     // A row that vanished from the open list either completed or was deleted, and only the
     // provider can say which. Verifying a few of them per poll keeps a bulk delete from turning
     // into a burst of requests. The ones not checked yet stay in `last_open`, so a bulk
@@ -544,26 +567,53 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
     let waiting: HashSet<String> = state.last_open.keys().cloned().collect();
     state.verify_misses.retain(|key, _| waiting.contains(key));
 
-    let mut sessions = build_sessions(&open, ROW_CAP);
-    append_done(&mut sessions, &state.done);
-    if sessions.is_empty() {
-        return Ok(json!({ "composer": true }));
-    }
-
-    Ok(json!({ "sessions": sessions, "composer": true }))
+    Ok(snapshot_from_memory(state))
 }
 
-/// Republish right after an action so its effect shows without waiting for the next poll.
-/// The action itself already reached the provider, so a refresh that fails here republishes the
-/// previous snapshot marked stale: the UI says the refresh failed instead of silently keeping a
-/// row the user just acted on.
-fn republish(token: &str, state: &mut PluginState) {
+/// Republish what memory already knows, so a click does not wait on the provider's whole list.
+fn republish(state: &mut PluginState) {
+    let snapshot = snapshot_from_memory(state);
+    state.last = Some(snapshot.clone());
+    let _ = publish(snapshot);
+}
+
+/// A full refresh for an action whose effect memory cannot show (quick add, or a row this process
+/// never saw). The action itself already reached the provider, so a refresh that fails here
+/// republishes the previous snapshot marked stale rather than a wrong or empty page.
+fn refresh(token: &str, state: &mut PluginState) {
     let snapshot = match poll_ticktick(token, state) {
         Ok(snapshot) => snapshot,
         Err(_) => stale(state.last.clone().unwrap_or_else(empty)),
     };
     state.last = Some(snapshot.clone());
     let _ = publish(snapshot);
+}
+
+/// Refresh one list after a quick add: the new row needs the id the provider assigned, but the
+/// other lists have not changed. Rows missing from the reply stay on the page until the next full
+/// poll reconciles them, and a failed fetch leaves the page as it was (the task exists either way).
+fn refresh_list(token: &str, state: &mut PluginState, project_id: &str) {
+    let name = if project_id == "inbox" {
+        String::new()
+    } else if let Some(entry) = state.last_open.values().find(|entry| entry.project_id == project_id) {
+        entry.project_name.clone()
+    } else {
+        let Ok(projects) = fetch_projects(token) else { return };
+        let Some(project) = projects.iter().find(|project| project["id"] == project_id) else { return };
+        project["name"].as_str().unwrap_or_default().to_owned()
+    };
+    let Ok(entries) = fetch_project_tasks(token, project_id, &name) else { return };
+    for entry in entries {
+        // A row the provider reports as done belongs to the done group, which the next full poll
+        // fills; drawing it as open here would offer a check that completes it twice.
+        if entry.completed_at.is_some() {
+            continue;
+        }
+        let key = format!("{}:{}", entry.project_id, entry.id);
+        state.last_open.insert(key.clone(), entry);
+        state.published.insert(key);
+    }
+    republish(state);
 }
 
 fn main() {
@@ -585,7 +635,8 @@ fn main() {
         let mut state = state.borrow_mut();
         if let Some((date, project_id, title)) = parse_create_action(action_id) {
             create_task(token, date, title, project_id)?;
-            republish(token, &mut state);
+            // Only the receiving list changed: one request instead of the whole fan-out.
+            refresh_list(token, &mut state, project_id.unwrap_or("inbox"));
             return Ok(json!(true));
         }
         // A `create.` action that fails to parse must come back as an error, not a plain
@@ -595,11 +646,32 @@ fn main() {
         }
         if let Some((project_id, task_id)) = parse_id_action(action_id, "reopen.") {
             reopen_task(token, project_id, task_id)?;
-            // The provider reports the task as open again on the next poll; dropping the done
-            // row now keeps the republished snapshot from showing it twice.
             let key = format!("{project_id}:{task_id}");
-            state.done.retain(|entry| entry.key != key);
-            republish(token, &mut state);
+            let reopened = state
+                .done
+                .iter()
+                .position(|entry| entry.key == key)
+                .map(|index| state.done.remove(index));
+            match reopened {
+                Some(entry) => {
+                    // Put the row back where the open list draws it, from what the done row still
+                    // knows; the next poll refreshes it with the provider's copy.
+                    state.last_open.insert(key.clone(), TaskEntry {
+                        id: entry.task_id,
+                        project_id: entry.project_id,
+                        project_name: entry.project_name,
+                        title: entry.title,
+                        due_date: entry.due_date,
+                        modified_at: now_millis(),
+                        repeat_flag: entry.repeat_flag,
+                        priority: entry.priority,
+                        completed_at: None,
+                    });
+                    state.published.insert(key);
+                    republish(&mut state);
+                }
+                None => refresh(token, &mut state),
+            }
             return Ok(json!(true));
         }
         if action_id.starts_with("reopen.") {
@@ -609,7 +681,19 @@ fn main() {
             return Err("Unknown TickTick action".to_owned());
         };
         complete_task(token, project_id, task_id)?;
-        republish(token, &mut state);
+        let key = format!("{project_id}:{task_id}");
+        match state.last_open.get(&key).cloned() {
+            Some(entry) => {
+                // The provider confirmed the completion; move the row now and let the next poll
+                // reconcile. A single checkbox costs no request fan-out.
+                state.done.push(DoneEntry::from_task(&entry, now_millis()));
+                state.done.sort_by_key(|entry| std::cmp::Reverse(entry.completed_at));
+                state.done.truncate(DONE_CAP);
+                republish(&mut state);
+            }
+            // This process never saw the row (its page came from a previous run's snapshot).
+            None => refresh(token, &mut state),
+        }
         Ok(json!(true))
     }).is_err() {
         std::process::exit(1);
