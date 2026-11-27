@@ -95,7 +95,7 @@
 - **规则**：遍历滴答的「任务清单」（`kind = TASK`），跳过笔记清单（`NOTE`）；每个清单取全部任务，跳过：笔记类任务（`kind = note`）、无标题。`status ≠ 0` 的任务**不再丢弃**，而是进 R19 的已完成分组（列表接口正常不返回它们，真返回时也不能凭空消失）。**收集箱要算进来**：项目列表通常不含收集箱，需要补一个 `id = inbox` 的伪项目去拉取，否则「全部」里会丢任务。
 - **边界**：单个清单请求失败不中断整轮，跳过该清单；全部清单都失败时本轮发布为空。
 - **验收**：建 3 个任务清单 + 1 个笔记清单，笔记清单及其任务都不出现；收集箱里放 1 条能看到；在滴答里勾掉一条，下一轮它进「已完成」分组而不是消失。
-- **落点**：`plugins/dida365/src/main.rs` / `fetch_projects`、`fetch_project_tasks`、`poll_ticktick`（补 inbox 在 `poll_ticktick` 开头）。
+- **落点**：`plugins/dida365/src/api.rs` / `fetch_projects`、`fetch_project_tasks`；`poll.rs` / `poll_ticktick`（补 inbox 在 `poll_ticktick` 开头）。
 
 ### R02 清单归属与筛选
 
@@ -111,14 +111,14 @@
 - **规则**：滴答的 `dueDate` 是**带时区的时间点**（如 `2026-11-08T16:00:00.000+0000`，配合 `timeZone: Asia/Shanghai`，本地实际是 11-09）。必须解析成带时区时间再换算成本机日期，**禁止截取字符串前 10 位**。`dueDate` 缺失时退回 `startDate`；两者都无 → 视为「未来」组（不显示日期）。
 - **边界**：纯日期写法 `YYYY-MM-DD` 直接按当地日期；秒 / 毫秒混用的时间字段统一为 Unix 毫秒。
 - **验收**：全天任务 `2026-11-08T16:00:00.000+0000` 在 `Asia/Shanghai` 机器上显示为 11-09 到期，日历落在 9 号。
-- **落点**：`main.rs` / `parse_local_due_date`、`parse_epoch_millis`；单测 `parse_due_date_maps_same_instant_to_same_local_day`。
+- **落点**：`model.rs` / `parse_local_due_date`、`parse_epoch_millis`；单测 `parse_due_date_maps_same_instant_to_same_local_day`。
 
 ### R04 重复任务
 
 - **规则**：`repeatFlag` 为真（兼容 bool / 非 0 数字 / 非空字符串）即视为重复任务。锚点**早于今天**时：归入「今天」组、不算逾期、详情写「重复任务 · 今天」、日历落在今天。锚点**等于或晚于今天**时按锚点日期正常处理，详情写「重复任务 · MM-DD 到期」。
 - **边界**：不做 RRULE 展开、不判断 `UNTIL` 是否已结束——超出本插件范围。
 - **验收**：每日重复任务锚点在 2 天前 → 出现在「今天」，详情「重复任务 · 今天」，不出现「逾期 2 天」；日历在今天的格子里。
-- **落点**：`main.rs` / `parse_repeat_flag`、`task_bucket_for_due`、`due_detail`、`calendar_due`；单测 `repeated_past_due_task_is_treated_as_today`、`task_rows_carry_the_calendar_day_and_repeat_anchors_move_to_today`。
+- **落点**：`model.rs` / `parse_repeat_flag`、`task_bucket_for_due`；`sessions.rs` / `calendar_due`；单测 `repeated_past_due_task_is_treated_as_today`、`task_rows_carry_the_calendar_day_and_repeat_anchors_move_to_today`。
 
 ### R05 默认「到期日」的比较序列（**已达成，2026-11-17；2026-11-18 改为展示层显式比较**）
 
@@ -137,7 +137,7 @@
 - **规则**：每行左侧方形勾选框（复用内置待办的行样式）；点击调宿主 `run_plugin_action`，插件的 action 名固定为 `complete.<projectId>.<taskId>`；插件收到后 `POST /open/v1/project/{pid}/task/{tid}/complete`，然后用内存里的行直接重新 `publish`（不为一次勾选全量拉取）：该行从待办列表移到「已完成」分组（见 R19），不是凭空消失。
 - **边界**：该行没有 action 的，勾选框禁用；请求期间禁用按钮，不重复提交（重复完成在滴答侧是幂等的，但别制造多余请求）。
 - **验收（已达成）**：正常网络下勾选后 ≤3 秒该行移到「已完成」分组（动作后插件用内存快照立即重发，不再全量拉取）；token 错误或断网时行内显示插件给出的一行错误文案（如 `TickTick completion failed with status 401`，`role="alert"`），勾选按钮在请求期间禁用。
-- **落点**：`main.rs` / `complete_task`；`PluginTasksPanel.tsx` / `TaskRow`；`PluginCalendar.tsx` 的当日行。
+- **落点**：`api.rs` / `complete_task`；`PluginTasksPanel.tsx` / `TaskRow`；`PluginCalendar.tsx` 的当日行。
 
 ### R07 行详情
 
@@ -200,7 +200,7 @@
 - **现状**：插件 `take(20)`（`main.rs:200`）硬截断且无提示；协议与 SDK 的硬上限是 200 条 / 单条 4096 字节 / 整行 256 KB。
 - **落实**：把 20 提到 200（或按「逾期 + 今天优先」截断后仍提示上限），插件页验证 60 条时的滚动与渲染性能；上限写进插件设置页说明。
 - **验收**：造 60 条任务，页面不卡不空白、可滚动；超过上限时能看到说明。
-- **落点**：`main.rs` / `build_sessions`；`PluginTasksPanel.css` 的滚动容器。
+- **落点**：`sessions.rs` / `build_sessions`；`PluginTasksPanel.css` 的滚动容器。
 
 ### R15 不干扰 Agent 区
 
@@ -224,7 +224,7 @@
 - **插件侧**：`POST /open/v1/task`，body `{ "title", "dueDate": "<日期>T00:00:00±HHMM", "isAllDay": true, "projectId"? }`；偏移取**本机时区**（如 `+0800`），不能写死 `+0000`（在负时区机器上会落早一天）；成功后**只重取目标清单一次**并立刻 `publish` 快照，新行不用等下一轮轮询。
 - **长度与转义**：标题上限必须前后端一致；标题里的点号要保留（`create.<日期>.<标题>` 只按前两个点切分，`list:` 形式再多切一层）。
 - **验收**：选「全部」添加 → 进收集箱；筛「计划」添加 → 进计划；跨午夜后添加 → 落到新一天；标题含「.」正常；超长中文标题有明确提示且输入不被清空。
-- **落点**：`src/features/plugins/PluginQuickAdd.tsx`；`main.rs` / `parse_create_action`、`create_task`；协议 `Contributions.composer`、`Session.listId`；SDK `task(..., list_id)`；宿主 `service.rs` / `action`（`composer` 已发布时放行 `create.*`，否则前端提交必然报 `Unknown plugin action`）。
+- **落点**：`src/features/plugins/PluginQuickAdd.tsx`；`actions.rs` / `parse_create_action`、`api.rs` / `create_task`；协议 `Contributions.composer`、`Session.listId`；SDK `task(..., list_id)`；宿主 `service.rs` / `action`（`composer` 已发布时放行 `create.*`，否则前端提交必然报 `Unknown plugin action`）。
 
 ### R18 日历数量与图例
 
@@ -242,7 +242,7 @@
 - **已知代价**（可接受）：插件没运行期间、或在别的设备上完成的任务，不会出现在分组里（没有 id 可复核）；撤销后滴答会残留旧的 `completedTime` 字段，判断完成状态**只看 `status`**，不看这个字段。动作成功后立即刷新：完成与撤销直接用内存里的行构造快照（不再为一次点击全量拉取），内存里没有这一行时才回到全量刷新；刷新失败时重发上一次快照并带 `stale`，界面上会显示「刷新失败，显示的是上次的数据」，不会静默停在用户刚点过的那一行（`0.1.9`）。
 - **边界**：已完成行占用的额度从 200 条上限里扣（未完成任务优先，见 R14）；分组最多 50 条，跨到第二天自动清空；同一任务在别处被重新打开时，本轮就从分组里移除，不会两处都显示。
 - **验收**：勾一条 → 行移到「已完成 1」，未完成列表少一条，进度分母不变；再点这条的勾 → 回到原位、分组消失；断网或 token 错误时点勾，行内显示宿主错误原文且行不动。
-- **落点**：`plugins/dida365/src/main.rs`（`PluginState` 消失差集 + `fetch_task` 复核、`done_row`、`reopen_task`、`parse_id_action`）；`PluginTasksPanel.tsx`（`openRows` / `doneRows` 分组、撤销按钮）；`PluginTasksPanel.css` 的 `.plugin-tasks__done*`；`TodoDayRow.tsx` 的 `toggle`（行首方框可点）与 `TodoDayRow.css` 的 `.todo-day-row__check`；`PluginCalendar.tsx` 传 `toggle` 而非右侧 `action`；i18n `completedGroup` / `reopenTask`。
+- **落点**：`plugins/dida365/src/` 的 `poll.rs`（`PluginState` 消失差集 + `fetch_task` 复核）、`api.rs`（`fetch_task`、`reopen_task`）、`sessions.rs`（`done_row`）、`actions.rs`（`parse_id_action`）；`PluginTasksPanel.tsx`（`openRows` / `doneRows` 分组、撤销按钮）；`PluginTasksPanel.css` 的 `.plugin-tasks__done*`；`TodoDayRow.tsx` 的 `toggle`（行首方框可点）与 `TodoDayRow.css` 的 `.todo-day-row__check`；`PluginCalendar.tsx` 传 `toggle` 而非右侧 `action`；i18n `completedGroup` / `reopenTask`。
 
 ### R20 排序方式可切换（2026-11-18）
 
@@ -278,7 +278,7 @@
 - **数据不写回**：只读滴答的 `priority`，不因显示或排序改任务；`4` 之类不在四档里的值一律当「无」，不凭空造档位。
 - **边界**：已完成行同样带标记（它仍是同一条任务）；日历视图不显示标记，只按日期落位；同一清单筛选下标记照常显示。
 - **验收**：一条高优先级、一条中、一条低、一条无优先级的任务行，前三条标题前分别有「高 / 中 / 低」，最后一条什么都没有；切英文后是 High / Med / Low；在排序菜单选「优先级」后高在前、无在后，逾期行仍然置顶；不选时默认顺序与加优先级前逐行一致。
-- **落点**：`plugins/dida365/src/main.rs` 的 `parse_priority` / `TaskEntry.priority` / `DoneEntry.priority`、`plugins/sdk/src/lib.rs` 的 `task()`、`src-tauri/src/plugin_host/protocol.rs` 的 `priority` 与 0–5 校验、`src/features/plugins/api.ts` 的 `PluginSession.priority`、`pluginPriority.ts`、`PluginTasksPanel.tsx` 的标题前标记、`PluginTasksPanel.css` 的 `.plugin-tasks__priority*`、i18n `priorities` / `priorityLabel`、`tests/regression/plugin-priority.tsx`。
+- **落点**：`plugins/dida365/src/model.rs` 的 `parse_priority` / `TaskEntry.priority` / `DoneEntry.priority`、`plugins/sdk/src/lib.rs` 的 `task()`、`src-tauri/src/plugin_host/protocol.rs` 的 `priority` 与 0–5 校验、`src/features/plugins/api.ts` 的 `PluginSession.priority`、`pluginPriority.ts`、`PluginTasksPanel.tsx` 的标题前标记、`PluginTasksPanel.css` 的 `.plugin-tasks__priority*`、i18n `priorities` / `priorityLabel`、`tests/regression/plugin-priority.tsx`。
 
 ### R23 日期标签筛选（2026-11-18）
 
@@ -566,6 +566,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | v2.6 | 2026-11-27 | 动作后不再全量 fan-out（需求不变）：完成 / 撤销用 `snapshot_from_memory` 从内存状态直接重发（0 次请求），快速添加只重取目标清单（1–2 次），内存里没有该行时才回退全量刷新。新增 `published` 记录上次发布过的未完成行，防止待复核的消失行被动作带回页面。此前每次点击要发 1 + N 个请求并可能撞上宿主 15 秒 action 超时。插件单测 12 → 13 |
 | v2.7 | 2026-11-27 | R19 与失败反馈收尾（需求不变）：消失行复核遇到 `status = 0` 时不再立即丢弃，而是按同一 3 轮上限重试，避免列表与单条接口短暂不一致时丢掉完成事件；宿主与 SDK 不再把 action 错误压成一句 `Plugin action failed`，改为显示插件自己的一行错误文案（≤300 字符，无 message 时回退通用错误），R06 的「错误原文」这才真正成立。插件单测 13 个不变，宿主新增 `action_error_message` 单测 |
 | v2.8 | 2026-11-27 | P1 打磨（需求不变）：新建全天任务的 `dueDate` 改成本机时区偏移（`local_offset` / `all_day_due`），负时区机器不再把任务落早一天；多清单拉取按 8 个线程分批并行，串行 fan-out 的等待降为最长一批；设置新增「测试连接」动作（只拉一次清单列表，token 失效立即显示插件的错误原文）；设置页对插件自己的动作错误显示原文（`pluginFailureDetail`），宿主错误仍走本地化文案；动作成功后分组底部显示「操作成功 / Done」，测试连接不再是点完没反应。插件 `0.2.1`；插件单测 13 → 14，前端补 `pluginFailureDetail` 单测 |
+| v2.10 | 2026-11-27 | P2 结构整理（零行为变化）：766 行的 `main.rs` 拆成 `main.rs`（40 行接线）+ `model.rs` / `api.rs` / `sessions.rs` / `poll.rs` / `actions.rs`，每个文件只有一个职责；函数、注释与测试逻辑原样搬迁，单测 14 个不变 |
 | v2.9 | 2026-11-27 | 设置归位（用户确认）：滴答清单的设置、动作与版本 / 权限从「AI 会话」页移到独立栏目「滴答清单」（侧栏「功能」组末尾，页面 `plugin:dida365`）。目录新增 `EXTERNAL_PLUGIN_PLACEMENTS`，给还没上架的外部插件声明 `settings`；只影响设置页位置，不增加市场卡片。新增归类单测 1 个 |
 
 ---
@@ -594,8 +595,13 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `plugins/dida365/src/main.rs` | 766 | 拉取（每批 8 个线程并行）、收集箱、分桶、发布、快速创建（`parse_create_action` / `create_task` / `all_day_due`）、完成与撤销动作、动作后的本地快照（`snapshot_from_memory` / `refresh_list` / `refresh`）、已完成分组复核（`PluginState` / `fetch_task` / `verified_task` / `done_row`）、消失任务的跨轮复核、「测试连接」动作与优先级解析（`parse_priority`） |
-| `plugins/dida365/src/tests.rs` | 221 | 14 个单测（日期换算、重复归今天、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、全天日期往返本机日期、优先级档位） |
+| `plugins/dida365/src/main.rs` | 40 | 接线：SDK 生命周期、poll / action 回调、token 读取 |
+| `plugins/dida365/src/model.rs` | 202 | 任务行与状态：`TaskEntry` / `DoneEntry` / `PluginState`、日期与时间字段解析（`parse_local_due_date` / `parse_epoch_millis`）、分桶（`task_bucket_for_due`）、`entry_from_task`、优先级（`parse_priority`） |
+| `plugins/dida365/src/api.rs` | 137 | 滴答 Open API 调用：清单与清单任务、单条复核（`fetch_task`，404/410 为终态）、完成 / 撤销 / 新建、本机时区 `dueDate`（`all_day_due`） |
+| `plugins/dida365/src/sessions.rs` | 108 | 发布行：`build_sessions` / `done_row` / `append_done` / `snapshot_from_memory`、200 / 50 额度 |
+| `plugins/dida365/src/poll.rs` | 212 | 轮询：每批 8 个线程并行拉取、消失任务复核（`Verified` / `verified_task`）、`republish` / `refresh` / `refresh_list` |
+| `plugins/dida365/src/actions.rs` | 119 | 动作 id 解析（`parse_create_action` / `parse_id_action`）与分发（`create` / `reopen` / `complete`、「测试连接」） |
+| `plugins/dida365/src/tests.rs` | 229 | 14 个单测（日期换算、重复归今天、完成时间、复核结果判定、内存快照只含已发布行、`reopen` 动作、200 额度、创建解析、全天日期往返本机日期、优先级档位） |
 | `plugins/dida365/fly-island-plugin.json` | 33 | id / 名称 / 图标 / 权限 / 设置 / 动作（`0.2.1`，动作 `test` = 测试连接） |
 | `plugins/sdk/src/lib.rs` | 313 | `task()` 构造器（含 `listId` / `repeat` / `priority`）、`run()` 生命周期（含失败缓存与 `stale()`）、`interval` 读取、发布裁剪、action 错误透传 |
 | `src-tauri/src/plugin_host/protocol.rs` | 126 | 会话字段与校验（`kind` / `due` / `listId` / `repeat` / `priority`）、`composer` 与 `stale` 字段 |
