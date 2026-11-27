@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NATIVE_PLUGINS, NATIVE_PLUGIN_IDS, PACKAGED_MARKET_PLUGINS } from "../../src/features/plugins/native/catalog.ts";
+import { EXTERNAL_PLUGIN_PLACEMENTS, NATIVE_PLUGINS, NATIVE_PLUGIN_IDS, PACKAGED_MARKET_PLUGINS } from "../../src/features/plugins/native/catalog.ts";
 import { externalPlacement, fallbackPlacement, isPluginPage, placedPlugins, pluginsOnPage, standalonePages } from "../../src/features/plugins/placement.ts";
 
 const none = Object.fromEntries(NATIVE_PLUGIN_IDS.map((id) => [id, false]));
@@ -8,10 +8,21 @@ const plugin = (id, contributes = ["panel"], enabled = true) => ({ enabled, mani
 const page = (list, id) => list.find((item) => item.id === id);
 
 test("every catalog plugin declares where its settings go, or that it has none", () => {
-  for (const entry of [...NATIVE_PLUGINS, ...PACKAGED_MARKET_PLUGINS]) {
+  for (const entry of [...NATIVE_PLUGINS, ...PACKAGED_MARKET_PLUGINS, ...EXTERNAL_PLUGIN_PLACEMENTS]) {
     assert.ok("settings" in entry, entry.id);
     if (entry.settings) assert.match(entry.settings.placement, /^(standalone|agentSessions|agentConnect|messages)$/, entry.id);
   }
+});
+
+test("an external plugin can declare a page of its own before it reaches the market", () => {
+  // 滴答清单在目录里声明独立栏目：待办类插件不和 AI 会话挤在一起。
+  const placed = placedPlugins(none, { dida365: plugin("dida365", ["sessions"]) });
+  assert.deepEqual(standalonePages(placed).map((item) => item.category), ["plugin:dida365"]);
+  assert.equal(page(placed, "dida365").category, `plugin:dida365`);
+  assert.equal(page(placed, "dida365").actionsCategory, `plugin:dida365`);
+  assert.deepEqual(pluginsOnPage(placed, "plugin:dida365").map((item) => item.id), ["dida365"]);
+  assert.ok(isPluginPage("plugin:dida365"));
+  assert.equal(externalPlacement("dida365", { contributes: ["sessions"] }).placement, "standalone");
 });
 
 test("built-in plugins go by their kind of feature", () => {

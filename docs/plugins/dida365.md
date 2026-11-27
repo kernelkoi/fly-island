@@ -192,6 +192,7 @@
 - **现状（已达成，此处更正）**：SDK 在 initialize 时读取 `settings["interval"]` 并 clamp 到 1–3600 秒（`plugins/sdk/src/lib.rs:202`），覆盖 `main()` 里传入的 180 秒默认值。之前文档误判此项不生效，以此为准。
 - **验收**：设 1 分钟，在滴答里改一条任务标题，≤75 秒内岛上更新；设 10 分钟，同样操作 3 分钟内不更新。
 - **落点**：`fly-island-plugin.json` 的 `settings`；`plugins/sdk/src/lib.rs:202`。
+- **位置**（2026-11-27 用户确认）：设置在独立栏目「滴答清单」里，排在侧栏「功能」组末尾（页面 `plugin:dida365`），不再落在「AI 会话」页；设置、动作按钮、版本 / 状态 / 权限同页。声明在 `features/plugins/native/catalog.ts` 的 `EXTERNAL_PLUGIN_PLACEMENTS`，侧栏用 `ListTodo` 线条图标。
 
 ### R14 规模与截断
 
@@ -565,6 +566,7 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | v2.6 | 2026-11-27 | 动作后不再全量 fan-out（需求不变）：完成 / 撤销用 `snapshot_from_memory` 从内存状态直接重发（0 次请求），快速添加只重取目标清单（1–2 次），内存里没有该行时才回退全量刷新。新增 `published` 记录上次发布过的未完成行，防止待复核的消失行被动作带回页面。此前每次点击要发 1 + N 个请求并可能撞上宿主 15 秒 action 超时。插件单测 12 → 13 |
 | v2.7 | 2026-11-27 | R19 与失败反馈收尾（需求不变）：消失行复核遇到 `status = 0` 时不再立即丢弃，而是按同一 3 轮上限重试，避免列表与单条接口短暂不一致时丢掉完成事件；宿主与 SDK 不再把 action 错误压成一句 `Plugin action failed`，改为显示插件自己的一行错误文案（≤300 字符，无 message 时回退通用错误），R06 的「错误原文」这才真正成立。插件单测 13 个不变，宿主新增 `action_error_message` 单测 |
 | v2.8 | 2026-11-27 | P1 打磨（需求不变）：新建全天任务的 `dueDate` 改成本机时区偏移（`local_offset` / `all_day_due`），负时区机器不再把任务落早一天；多清单拉取按 8 个线程分批并行，串行 fan-out 的等待降为最长一批；设置新增「测试连接」动作（只拉一次清单列表，token 失效立即显示插件的错误原文）；设置页对插件自己的动作错误显示原文（`pluginFailureDetail`），宿主错误仍走本地化文案；动作成功后分组底部显示「操作成功 / Done」，测试连接不再是点完没反应。插件 `0.2.1`；插件单测 13 → 14，前端补 `pluginFailureDetail` 单测 |
+| v2.9 | 2026-11-27 | 设置归位（用户确认）：滴答清单的设置、动作与版本 / 权限从「AI 会话」页移到独立栏目「滴答清单」（侧栏「功能」组末尾，页面 `plugin:dida365`）。目录新增 `EXTERNAL_PLUGIN_PLACEMENTS`，给还没上架的外部插件声明 `settings`；只影响设置页位置，不增加市场卡片。新增归类单测 1 个 |
 
 ---
 
@@ -617,7 +619,10 @@ R01、R02、R03、R04、**R05**（2026-11-17 由 `7925288c` 修好，2026-11-18 
 | `src/features/plugins/PluginIcon.tsx` | 13 | `ticktick` → 官方 SVG |
 | `src/i18n/sections/plugins.ts` | 118 | 插件页中英文案（含图例、`addTaskFor` 占位、`titleTooLong`、到期详情、收集箱、三空态、`completedGroup` / `reopenTask`、`sortMode` / `sortModes`） |
 | `src/features/plugins/errors.ts` | 26 | 失败分流：市场 / 安装错误码（`pluginFailureCode`）与插件自己的动作错误（`pluginFailureDetail`，宿主错误不误当原文） |
-| `src/windows/settings/PluginSettingsGroup.tsx` | 77 | 插件设置分组：设置行、动作按钮（含「测试连接」）、版本 / 状态 / 权限与错误显示 |
+| `src/windows/settings/PluginSettingsGroup.tsx` | 80 | 插件设置分组：设置行、动作按钮（含「测试连接」）、版本 / 状态 / 权限与错误显示 |
+| `src/features/plugins/native/catalog.ts` | 91 | 内置与打包插件的目录声明；`EXTERNAL_PLUGIN_PLACEMENTS` 声明还没上架的外部插件（滴答清单）的设置页位置 |
+| `src/features/plugins/placement.ts` | 96 | 归类：目录声明 → 设置页 / 分组 / 独立栏目；未声明的插件按 `contributes` 回退 |
+| `src/features/plugins/pluginLineIcons.ts` | 21 | 独立栏目的侧栏线条图标（滴答清单用 `ListTodo`） |
 | `tests/unit/plugin-sort.test.mjs` | 54 | 三种排序模式与 `sortModesFor()` 的单元测试 |
 | `tests/unit/plugin-focus.test.mjs` | 66 | 焦点存储归一化、时长范围、任务消失判定与 unknown 保留 |
 | `tests/regression/plugin-tasks.tsx` | 400 | 插件页回归（94 检查：快速添加位置与图例、清单筛选按钮与菜单计数、完成/撤销路径与失败提示、已完成分组顺序、日历左方框勾选与撤销、排序按钮与模式切换、开始按钮的唯一焦点与切换、工具栏不溢出、收集箱/重复行、未配置/stale mock 插件） |

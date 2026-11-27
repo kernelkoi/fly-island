@@ -72,6 +72,15 @@ export const PACKAGED_MARKET_PLUGINS = [
 export type PackagedMarketId = (typeof PACKAGED_MARKET_PLUGINS)[number]["id"];
 export type MarketPluginId = NativePluginId | PackagedMarketId;
 
+/**
+ * External plugins that are not in the market yet but still say where their settings go. Without
+ * an entry here a plugin the catalog does not know follows the manifest's contributes.
+ */
+export const EXTERNAL_PLUGIN_PLACEMENTS = [
+  // TickTick is a task list beside the island's own todos, not an AI Agent feature.
+  { id: "dida365", settings: { placement: "standalone" } },
+] as const satisfies readonly { id: string; settings: PluginSettingsPlacement }[];
+
 const approvedPackages = new Set(marketPackageIds);
 export const MARKET_PACKAGES = PACKAGED_MARKET_PLUGINS.filter(({ id }) => approvedPackages.has(id));
 

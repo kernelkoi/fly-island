@@ -1,7 +1,7 @@
 // Where each plugin's settings live, taken from the catalog's declarations. Pure: the node tests load it.
 // Rules: docs/design/settings.md, "插件设置归类规范（长期）".
 import {
-  NATIVE_PLUGINS, PACKAGED_MARKET_PLUGINS,
+  EXTERNAL_PLUGIN_PLACEMENTS, NATIVE_PLUGINS, PACKAGED_MARKET_PLUGINS,
   type NativePluginId, type PluginSettingsPlacement, type PluginSettingsPlacementName,
 } from "./native/catalog.ts";
 import type { InstalledPlugin, PluginManifest } from "./api";
@@ -27,9 +27,10 @@ export function fallbackPlacement(manifest: Pick<PluginManifest, "contributes">)
   return { placement: "standalone" };
 }
 
-/** A packaged plugin's declaration; null when it declared that it has nothing to set. */
+/** A packaged or otherwise declared plugin's placement; null when it declared that it has nothing to set. */
 export function externalPlacement(id: string, manifest: Pick<PluginManifest, "contributes">): PluginSettingsPlacement | null {
-  const listed = PACKAGED_MARKET_PLUGINS.find((plugin) => plugin.id === id);
+  const listed = PACKAGED_MARKET_PLUGINS.find((plugin) => plugin.id === id)
+    ?? EXTERNAL_PLUGIN_PLACEMENTS.find((plugin) => plugin.id === id);
   return listed ? listed.settings : fallbackPlacement(manifest);
 }
 

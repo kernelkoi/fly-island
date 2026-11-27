@@ -217,6 +217,7 @@
 - 插件停用或卸载时，它的栏目或分组消失；正停在它的独立栏目时回到插件页。
 - **新增插件必须在目录（`features/plugins/native/catalog.ts`）里声明 `settings`**（内置插件和打包市场插件都要，类型上是必填项）。设置面板和侧栏只按声明渲染，不写按插件 id 分支的代码。
 - 开发者模式下加载、目录里没有的插件按清单的 `contributes` 归类：含 `quota` 或 `sessions` → AI 会话；否则含 `notifications` → 消息；否则独立栏目。
+- 已知但还没上架的外部插件（滴答清单这类）在目录的 `EXTERNAL_PLUGIN_PLACEMENTS` 里声明 `settings`，优先于按 `contributes` 归类；声明只影响设置页位置，不会给插件市场加卡片。
 - 外部进程插件的设置项来自清单 `settings`，仍用 `PluginSettingRow` / `PluginNumberSettingRow` 渲染，归类只改位置，不改协议。
 
 ### 图标
