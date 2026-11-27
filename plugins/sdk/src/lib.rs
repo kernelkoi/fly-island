@@ -28,9 +28,11 @@ pub fn session(id: &str, title: &str, cwd: Option<&str>, status: &str, updated: 
 /// `priority` is the provider's own importance (0 = none); the UI decides how to show it.
 /// `bucket` is the row's calendar group — "overdue", "today" or "future" (future covers a row
 /// without a day) — instead of borrowing the agent status word to say the same thing.
+/// `action_prefixes` declares id namespaces the row also accepts (an empty slice for none),
+/// such as `due.<project>.<task>.` for a due-day editor. Each prefix must end with `.`.
 #[allow(clippy::too_many_arguments)] // one row's fields, not a call graph; mirrors `Session`
-pub fn task(id: &str, title: &str, list: Option<&str>, status: &str, updated: i64, action: Option<&str>, detail: Option<&str>, due: Option<&str>, list_id: Option<&str>, repeat: bool, priority: Option<i64>, bucket: Option<&str>) -> Value {
-    json!({"id":id,"title":title,"cwd":list,"listId":list_id,"status":status,"updatedAt":updated,"action":action,"detail":detail,"due":due,"kind":"task","repeat":repeat,"priority":priority,"bucket":bucket})
+pub fn task(id: &str, title: &str, list: Option<&str>, status: &str, updated: i64, action: Option<&str>, detail: Option<&str>, due: Option<&str>, list_id: Option<&str>, repeat: bool, priority: Option<i64>, bucket: Option<&str>, action_prefixes: &[String]) -> Value {
+    json!({"id":id,"title":title,"cwd":list,"listId":list_id,"status":status,"updatedAt":updated,"action":action,"detail":detail,"due":due,"kind":"task","repeat":repeat,"priority":priority,"bucket":bucket,"actionPrefixes":action_prefixes})
 }
 pub fn notification(id: &str, source_id: &str, app_name: &str, icon: &str, title: &str, body: &str, action: Option<&str>) -> Value {
     json!({"id":id,"sourceId":source_id,"appName":app_name,"icon":icon,"title":title,"body":body,"receivedAt":now(),"action":action})

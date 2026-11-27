@@ -40,6 +40,9 @@ pub(crate) fn build_sessions(tasks: &[TaskEntry], cap: usize) -> Vec<Value> {
         // A repeated task's past anchor means it belongs on today, not on its anchor day.
         // The due wording is the UI's job (in the user's language), so no detail line here.
         let calendar_due = task.due_date.map(|due| if task.repeat_flag && due < today { today } else { due });
+        // The row's editor appends a day (or `clear`) to this prefix; declaring the namespace
+        // instead of every day keeps the snapshot small and stable between polls.
+        let due_prefix = format!("due.{}.{}.", task.project_id, task.id);
         sessions.push(task_row(
             &format!("{}:{}", task.project_id, task.id),
             &task.title,
@@ -53,6 +56,7 @@ pub(crate) fn build_sessions(tasks: &[TaskEntry], cap: usize) -> Vec<Value> {
             task.repeat_flag,
             Some(task.priority),
             Some(bucket),
+            std::slice::from_ref(&due_prefix),
         ));
     }
     sessions
@@ -74,6 +78,7 @@ pub(crate) fn done_row(entry: &DoneEntry) -> Value {
         entry.repeat_flag,
         Some(entry.priority),
         None,
+        &[],
     )
 }
 

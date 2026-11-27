@@ -1,0 +1,32 @@
+/* The row's date editor stays beside its focus controls; its own picker is fixed above the list. */
+.plugin-tasks__actions {
+  position: relative;
+  display: inline-flex;
+  align-items: start;
+  gap: var(--space-xs);
+}
+
+.plugin-due-date,
+.plugin-due-date__position {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A due date is row chrome, not a second label: only the icon is visible until hovered or focused. */
+.plugin-due-date .todo-date-picker__button {
+  width: 26px;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-2);
+}
+
+.plugin-due-date .todo-date-picker__button > span {
+  display: none;
+}
+
+.plugin-due-date .todo-date-popover {
+  position: fixed;
+  top: var(--plugin-picker-top, 100px);
+  right: var(--plugin-picker-right, 16px);
+}

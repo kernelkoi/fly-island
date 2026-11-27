@@ -400,7 +400,8 @@ impl Host {
         let declared = p.manifest.actions.iter().any(|a| a.id == action)
             || live.live.get(id).is_some_and(|l| {
                 let data = &l.data;
-                data.sessions.iter().any(|s| s.action.as_deref() == Some(action))
+                data.sessions.iter().any(|s| s.action.as_deref() == Some(action)
+                    || s.action_prefixes.iter().any(|prefix| action.starts_with(prefix)))
                     || data.notifications.iter().any(|n| n.action.as_deref() == Some(action))
                     // The composer assembles `create.<day>[.list:<id>].<title>` at submit time, so it
                     // never appears in a snapshot; the plugin that announced the composer owns these

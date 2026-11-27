@@ -1,4 +1,4 @@
-use crate::actions::{parse_create_action, parse_id_action};
+use crate::actions::{parse_create_action, parse_due_action, parse_id_action};
 use crate::api::all_day_due;
 use crate::model::{
     entry_from_task, now_millis, parse_epoch_millis, parse_local_due_date, parse_priority,
@@ -226,6 +226,19 @@ fn only_the_providers_four_priority_levels_survive_the_round_trip() {
     let mut entry = open_task("t1", "高优先级的活", None, 1);
     entry.priority = 5;
     assert_eq!(done_row(&DoneEntry::from_task(&entry, 1))["priority"], json!(5));
+}
+
+#[test]
+fn due_actions_carry_a_day_or_a_clear_and_rows_declare_only_the_namespace() {
+    let day = NaiveDate::from_ymd_opt(2026, 11, 20).unwrap();
+    assert_eq!(parse_due_action("due.p1.t9.2026-11-20"), Some(("p1", "t9", Some(day))));
+    assert_eq!(parse_due_action("due.p1.t9.clear"), Some(("p1", "t9", None)));
+    for bad in ["due.p1", "due.p1.t9", "due.p1.t9.today", "due..t9.2026-11-20", "complete.p1.t9.2026-11-20"] {
+        assert_eq!(parse_due_action(bad), None, "{bad}");
+    }
+    // The snapshot declares one namespace per row, not one id per possible day.
+    let session = &build_sessions(&[open_task("t1", "改到期日", None, 1)], ROW_CAP)[0];
+    assert_eq!(session["actionPrefixes"], json!(["due.p1.t1."]));
 }
 
 #[test]

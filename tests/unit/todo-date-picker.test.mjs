@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { movePickerFocus, pickerMonthGrid, pickerWeekStart, shiftPickerMonth } from "../../src/features/todos/datePickerCalendar.ts";
+import { movePickerFocus, pickerMonthGrid, pickerWeekStart, quickAddDateChoice, shiftPickerMonth, taskDueDateChoice } from "../../src/features/todos/datePickerCalendar.ts";
 import { holdIslandPicker, isIslandPickerOpen } from "../../src/lib/islandPicker.ts";
 
 test("picker weeks follow the UI locale and span complete weeks across month boundaries", () => {
@@ -33,6 +33,17 @@ test("keyboard navigation crosses weeks and months and stops at the minimum date
   assert.equal(move("2026-12-31", "PageUp"), "2026-11-30");
   assert.equal(move("2026-11-30", "PageDown"), "2026-12-30");
   assert.equal(move("2026-11-25", "Enter"), null);
+  // No minimum: an existing task's editor may move into past months as well.
+  assert.equal(movePickerFocus("2026-11-05", "ArrowLeft", 1, null), "2026-11-04");
+  assert.equal(movePickerFocus("2026-11-05", "PageUp", 1, null), "2026-10-05");
+});
+
+test("a new todo keeps earlier days on its list, while editing a task keeps the chosen day", () => {
+  assert.equal(quickAddDateChoice("2026-11-10", "2026-11-15"), null);
+  assert.equal(quickAddDateChoice("2026-11-15", "2026-11-15"), null);
+  assert.equal(quickAddDateChoice("2026-11-16", "2026-11-15"), "2026-11-16");
+  assert.equal(taskDueDateChoice("2026-11-10", "2026-11-15"), "2026-11-10");
+  assert.equal(taskDueDateChoice(null, "2026-11-15"), null);
 });
 
 test("picker close/focus suppression remains held until every open owner releases it", () => {

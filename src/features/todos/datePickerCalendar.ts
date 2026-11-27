@@ -17,10 +17,21 @@ export function shiftPickerMonth(date: string, delta: number) {
   return `${month}-${String(Math.min(Number(date.slice(8)), new Date(year, monthNumber, 0).getDate())).padStart(2, "0")}`;
 }
 
-export function movePickerFocus(date: string, key: string, weekStart: 0 | 1, min: string): string | null {
+/** Picking a new todo's day: today and earlier mean the current list, later days schedule it. */
+export function quickAddDateChoice(date: string | null, today: string) {
+  return date && date > today ? date : null;
+}
+
+/** Editing an existing row's due day: past days are allowed and null clears the date. */
+export function taskDueDateChoice(date: string | null) {
+  return date;
+}
+
+/** `min` is the first selectable day, or null when the picker allows every past day. */
+export function movePickerFocus(date: string, key: string, weekStart: 0 | 1, min: string | null): string | null {
   const weekday = (new Date(`${date}T00:00:00`).getDay() - weekStart + 7) % 7;
   const days: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, Home: -weekday, End: 6 - weekday };
   const next = key in days ? addDays(date, days[key])
     : key === "PageUp" ? shiftPickerMonth(date, -1) : key === "PageDown" ? shiftPickerMonth(date, 1) : null;
-  return next === null ? null : next < min ? min : next;
+  return next === null || min === null || next >= min ? next : min;
 }

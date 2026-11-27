@@ -48,6 +48,9 @@ export type PluginPageText = {
   priorities: Record<"low" | "medium" | "high", string>;
   /** The priority mark on a row, named for anyone who cannot see the colour. */
   priorityLabel: (level: string, title: string) => string;
+  /** The row's due-day editor: its button label, and an undated row's button text. */
+  changeDueDate: (title: string, date: string) => string;
+  noDueDate: string;
 };
 
 // "2026-11-20" → "11月20日"; string math so node tests and browsers agree.
@@ -93,6 +96,8 @@ export const zhCN: PluginPageText = {
   },
   priorities: { low: "低", medium: "中", high: "高" },
   priorityLabel: (level, title) => `${title} · 优先级${level}`,
+  changeDueDate: (title, date) => `修改到期日：${title} · ${date}`,
+  noDueDate: "无到期日",
 };
 
 export const en: PluginPageText = {
@@ -132,4 +137,6 @@ export const en: PluginPageText = {
   },
   priorities: { low: "Low", medium: "Med", high: "High" },
   priorityLabel: (level, title) => `${title} · Priority ${level}`,
+  changeDueDate: (title, date) => `Change due date: ${title} · ${date}`,
+  noDueDate: "No due date",
 };

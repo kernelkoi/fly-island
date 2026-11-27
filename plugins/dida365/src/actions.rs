@@ -3,7 +3,7 @@
 use chrono::NaiveDate;
 use fly_island_plugin_sdk::{json, Value};
 use std::cell::RefCell;
-use crate::api::{complete_task, create_task, fetch_projects, reopen_task};
+use crate::api::{complete_task, create_task, fetch_projects, reopen_task, update_due_date};
 use crate::model::{now_millis, DoneEntry, PluginState, TaskEntry};
 use crate::poll::{refresh, refresh_list, republish};
 use crate::sessions::DONE_CAP;
@@ -44,6 +44,17 @@ pub(crate) fn parse_id_action<'a>(action_id: &'a str, prefix: &str) -> Option<(&
     Some((project_id, task_id))
 }
 
+/// `due.<projectId>.<taskId>.<YYYY-MM-DD>` sets a new day; `clear` removes it.
+pub(crate) fn parse_due_action(action_id: &str) -> Option<(&str, &str, Option<NaiveDate>)> {
+    let (project_id, task_id) = parse_id_action(action_id, "due.")?;
+    let (task_id, day) = task_id.split_once('.')?;
+    if task_id.is_empty() {
+        return None;
+    }
+    let date = if day == "clear" { None } else { NaiveDate::parse_from_str(day, "%Y-%m-%d").ok().map(Some)? };
+    Some((project_id, task_id, date))
+}
+
 /// Runs one action. The connection test borrows no memory, so it reaches the provider before the
 /// state is taken.
 pub(crate) fn handle(action_id: &str, token: &str, state: &RefCell<PluginState>) -> Result<Value, String> {
@@ -54,6 +65,22 @@ pub(crate) fn handle(action_id: &str, token: &str, state: &RefCell<PluginState>)
         return Ok(json!(true));
     }
     let mut state = state.borrow_mut();
+    if let Some((project_id, task_id, date)) = parse_due_action(action_id) {
+        update_due_date(token, project_id, task_id, date)?;
+        let key = format!("{project_id}:{task_id}");
+        if let Some(entry) = state.last_open.get_mut(&key) {
+            entry.due_date = date;
+            entry.modified_at = now_millis();
+            state.verify_misses.remove(&key);
+            republish(&mut state);
+        } else {
+            refresh(token, &mut state);
+        }
+        return Ok(json!(true));
+    }
+    if action_id.starts_with("due.") {
+        return Err("Invalid TickTick due date action".to_owned());
+    }
     if let Some((date, project_id, title)) = parse_create_action(action_id) {
         create_task(token, date, title, project_id)?;
         // Only the receiving list changed: one request instead of the whole fan-out.

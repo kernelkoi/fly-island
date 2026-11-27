@@ -2,19 +2,22 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { monthOf, shiftMonth } from "./calendar";
-import { movePickerFocus, pickerMonthGrid, pickerWeekStart, shiftPickerMonth } from "./datePickerCalendar";
+import { movePickerFocus, pickerMonthGrid, pickerWeekStart, quickAddDateChoice, shiftPickerMonth } from "./datePickerCalendar";
 import "./TodoDatePopover.css";
 
 /** A calendar drawn inside the todo panel, so WebView2 keeps both focus and stacking order. */
-export function TodoDatePopover({ id, value, today, onSelect, onClose }: {
+export function TodoDatePopover({ id, value, today, onSelect, onClose, chooseDate = quickAddDateChoice, allowPast = false }: {
   id: string;
   value: string | null;
   today: string;
   onSelect: (date: string | null) => void;
   onClose: () => void;
+  /** New todos map an earlier day to the current list; editing a task keeps the chosen day. */
+  chooseDate?: (date: string | null, today: string) => string | null;
+  allowPast?: boolean;
 }) {
   const t = useTranslation();
-  const initial = value && value >= today ? value : today;
+  const initial = allowPast && value ? value : value && value >= today ? value : today;
   const [month, setMonth] = useState(monthOf(initial));
   const [focused, setFocused] = useState(initial);
   const focusRequested = useRef(true);
@@ -38,7 +41,7 @@ export function TodoDatePopover({ id, value, today, onSelect, onClose }: {
     setMonth(shiftMonth(month, delta));
     setFocused(shiftPickerMonth(focused, delta));
   };
-  const select = (date: string | null) => { onSelect(date && date > today ? date : null); onClose(); };
+  const select = (date: string | null) => { onSelect(chooseDate(date, today)); onClose(); };
 
   return (
     <div ref={popup} id={id} className="todo-date-popover" role="dialog" aria-label={t.notebook.pickDate}
@@ -58,7 +61,7 @@ export function TodoDatePopover({ id, value, today, onSelect, onClose }: {
         onKeyDown={(event) => {
           const date = (event.target as HTMLElement).closest<HTMLElement>("[data-date]")?.dataset.date;
           if (!date) return;
-          const next = movePickerFocus(date, event.key, weekStart, today);
+          const next = movePickerFocus(date, event.key, weekStart, allowPast ? null : today);
           if (next === null) return;
           event.preventDefault();
           event.stopPropagation();
@@ -74,7 +77,7 @@ export function TodoDatePopover({ id, value, today, onSelect, onClose }: {
             {dates.slice(week * 7, week * 7 + 7).map(date => (
               <div role="gridcell" key={date} aria-selected={date === initial}>
                 <button type="button" data-date={date} tabIndex={date === focused ? 0 : -1}
-                  disabled={date < today} aria-label={formats.day.format(toDate(date))}
+                  disabled={!allowPast && date < today} aria-label={formats.day.format(toDate(date))}
                   aria-current={date === today ? "date" : undefined} aria-pressed={date === initial}
                   className={`todo-date-popover__day${monthOf(date) !== month ? " todo-date-popover__day--outside" : ""}`}
                   onFocus={() => setFocused(date)} onClick={() => select(date)}>

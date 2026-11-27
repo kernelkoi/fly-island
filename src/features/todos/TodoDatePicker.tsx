@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { CalendarDays } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { addDays } from "./schedule";
+import { taskDueDateChoice } from "./datePickerCalendar";
 import { holdIslandPicker } from "../../lib/islandPicker";
 import { TodoDatePopover } from "./TodoDatePopover";
 import "./TodoDatePicker.css";
@@ -12,12 +13,20 @@ export function TodoDatePicker({
   today,
   disabled,
   onChange,
+  label,
+  ariaLabel,
+  allowPast = false,
 }: {
   /** Chosen day (YYYY-MM-DD), or null for the list's own day. */
   value: string | null;
   today: string;
   disabled: boolean;
   onChange: (date: string | null) => void;
+  /** An editing button shows its current date; the default button says Today / Tomorrow. */
+  label?: (date: string | null) => string;
+  /** Overrides the accessible name; the default is the pick-date wording plus the visible label. */
+  ariaLabel?: string;
+  allowPast?: boolean;
 }) {
   const t = useTranslation();
   const [open, setOpen] = useState(false);
@@ -26,7 +35,7 @@ export function TodoDatePicker({
   const id = useId();
   const showing = open && !disabled;
   const isLater = value !== null && value > today;
-  const label = !isLater
+  const displayLabel = label ? label(value) : !isLater
     ? t.notebook.dateToday
     : value === addDays(today, 1)
       ? t.notebook.dateTomorrow
@@ -66,16 +75,16 @@ export function TodoDatePicker({
         className={`todo-date-picker__button${isLater ? " todo-date-picker__button--later" : ""}`}
         type="button"
         disabled={disabled}
-        aria-label={`${t.notebook.pickDate}: ${label}`}
+        aria-label={ariaLabel ?? `${t.notebook.pickDate}: ${displayLabel}`}
         aria-haspopup="dialog"
         aria-expanded={showing}
         aria-controls={showing ? id : undefined}
         onClick={() => setOpen(!showing)}
       >
         <CalendarDays size={13} strokeWidth={2.2} aria-hidden="true" />
-        <span>{label}</span>
+        <span>{displayLabel}</span>
       </button>
-      {showing && <TodoDatePopover id={id} value={value} today={today} onSelect={onChange} onClose={close} />}
+      {showing && <TodoDatePopover id={id} value={value} today={today} onSelect={onChange} onClose={close} allowPast={allowPast} chooseDate={allowPast ? taskDueDateChoice : undefined} />}
     </span>
   );
 }

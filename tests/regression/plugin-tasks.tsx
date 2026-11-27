@@ -1,83 +1,15 @@
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { mockIPC } from "@tauri-apps/api/mocks";
-import { I18nProvider, LOCALE_STORAGE_KEY, TRANSLATIONS } from "../../src/i18n";
+import { I18nProvider, TRANSLATIONS } from "../../src/i18n";
 import { PluginTasksPanel } from "../../src/features/plugins/PluginTasksPanel";
 import { PluginFocusProvider } from "../../src/features/plugins/PluginFocusContext";
 import { PLUGIN_RUNTIME_ENABLED } from "../../src/features/releaseFlags.ts";
+import { dayFromNow, dayToday, locale, name, ran, t, todoText } from "./pluginTasksFixture.ts";
 import "../../src/styles/tokens.css";
 import "../../src/styles/base.css";
 import "../../src/features/plugins/PluginTasksPanel.css";
 
-Object.assign(globalThis, { isTauri: true, IS_REACT_ACT_ENVIRONMENT: true });
-const locale = new URLSearchParams(location.search).get("lang") === "en" ? "en" : "zh-CN";
-localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-const t = TRANSLATIONS[locale].plugins;
-const todoText = TRANSLATIONS[locale].todo;
-const dayToday = TRANSLATIONS[locale].notebook.dayToday;
-const name = { "zh-CN": "滴答清单", en: "TickTick" };
-const manifest = (id: string, contributes: string[], enabled = true) => ({
-  manifest: { id, name, description: name, icon: id === "dida365" ? "ticktick" : null, version: "0.1.1", apiVersion: 1, runtime: { command: `${id}.exe` },
-    permissions: ["network", "quota", "sessions"], contributes, settings: [], actions: [] },
-  enabled, directory: `plugins/${id}`, development: true, settings: {},
-});
-const dayFromNow = (offset: number) => {
-  const date = new Date();
-  date.setHours(12, 0, 0, 0);
-  date.setDate(date.getDate() + offset);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-const session = (id: string, title: string, detail: string | null, status: string, updatedAt: number, action: string | null, cwd: string | null = "工作", due: string | null = null, repeat = false) =>
-  ({ id, title, detail, kind: "task", cwd, listId: id.split(":")[0] || null, due, repeat, status, updatedAt, action, bucket: !due ? "future" : due < dayFromNow(0) ? (repeat ? "today" : "overdue") : due === dayFromNow(0) ? "today" : "future" });
-const live = {
-  dida365: {
-    status: "running",
-    quota: [{ id: "tasks", label: "TickTick", remainingPercent: 60, secondaryPercent: null, balance: "3 条", resetsAt: null, updatedAt: 1 }],
-    sessions: [
-      // Finished rows carry a reopen action, not a complete one: their check undoes the completion.
-      session("p1:done", "已完成的活", null, "completed", 30, "reopen.p1.done", "工作", dayFromNow(0)),
-      session("p2:done2", "刚完成的活", null, "completed", 80, "reopen.p2.done2", "学习", dayFromNow(0)),
-      session("p1:late", "逾期的活", null, "running", 10, "complete.p1.late", "工作", dayFromNow(-1)),
-      session("p1:today", "今天要做的活", null, "running", 20, "complete.p1.today", "工作", dayFromNow(0)),
-      session("p2:study", "学习清单的活", null, "running", 40, "complete.p2.study", "学习", dayFromNow(1)),
-      session("p3:life", "生活清单的活", null, "running", 5, "complete.p3.life", "生活", dayFromNow(3)),
-      session("inbox:quick", "收件箱的活", null, "running", 50, "complete.inbox.quick", null, dayFromNow(1)),
-      session("p4:loop", "重复的活", null, "running", 60, "complete.p4.loop", "重复", dayFromNow(-1), true),
-    ],
-    notifications: [],
-    composer: true,
-  },
-  silent: { status: "running", quota: [], sessions: [], notifications: [] },
-  emptyTodo: { status: "running", quota: [], sessions: [], notifications: [], composer: true },
-  // An unconfigured plugin keeps its block to point at Settings instead of reading as "no tasks".
-  unconfig: { status: "running", settingsConfigured: false, quota: [], sessions: [], notifications: [] },
-  // A failed refresh keeps the last good rows and flags them, instead of wiping the list.
-  staleTodo: { status: "running", stale: true, quota: [], notifications: [], sessions: [session("s1:old", "上次拉到的活", null, "running", 70, "complete.s1.old", "旧清单")] },
-};
-const snapshot = {
-  registry: { developerMode: true, indexUrl: "", installed: {
-    dida365: manifest("dida365", ["quota", "sessions", "notifications"]), silent: manifest("silent", ["sessions"]),
-    disabled: manifest("disabled", ["sessions"], false), messagesOnly: manifest("messagesOnly", ["notifications"]),
-    emptyTodo: manifest("emptyTodo", ["sessions"]), unconfig: manifest("unconfig", ["sessions"]),
-    staleTodo: manifest("staleTodo", ["sessions"]),
-  } },
-  live,
-};
-const ran: string[] = [];
-mockIPC((command, payload) => {
-  const args = (payload ?? {}) as Record<string, unknown>;
-  if (command === "get_plugins") return snapshot;
-  if (command === "run_plugin_action") {
-    const action = String(args.action ?? "");
-    ran.push(`${args.id}/${action}`);
-    // One check, one undo and one quick add fail so the error paths can be verified.
-    if (action === "complete.p1.late") throw "TickTick completion failed with status 401";
-    if (action === "reopen.p2.done2") throw "TickTick reopen failed with status 404";
-    if (action.includes("失败")) throw "TickTick create failed with status 500";
-    return true;
-  }
-  return null;
-}, { shouldMockEvents: true });
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const messages: string[] = [];
 function check(condition: unknown, label: string) {
   if (!condition) throw new Error(label);
@@ -337,6 +269,39 @@ try {
     check(ran.includes("dida365/complete.p1.late"), "点勾运行该会话的动作");
     check(rowOf("逾期的活").querySelector(".plugin-tasks__error")?.textContent === "TickTick completion failed with status 401", "勾选失败在行内显示错误");
     check(checkOf("逾期的活").getAttribute("aria-label") === t.markComplete("逾期的活"), "勾选按钮有无障碍名称");
+    // The due-day editor: only rows that declared the namespace get one, and it writes back.
+    const monthDay = (date: string) => new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric" }).format(new Date(`${date}T00:00:00`));
+    const dueButtonOf = (title: string) => rowOf(title).querySelector<HTMLButtonElement>(".plugin-due-date .todo-date-picker__button")!;
+    const pickDay = async (day: string) => {
+      await act(async () => document.querySelector<HTMLButtonElement>(`.plugin-due-date .todo-date-popover [data-date="${day}"]`)!.click());
+      await wait();
+    };
+    check(document.querySelectorAll(".plugin-due-date").length === 7, "每个未完成行都有改到期日按钮");
+    check(!rowOf("已完成的活").querySelector(".plugin-due-date"), "已完成行不改到期日");
+    check(dueButtonOf("逾期的活").getAttribute("aria-label") === t.changeDueDate("逾期的活", monthDay(dayFromNow(-1))),
+      "改到期日按钮的无障碍名带着任务和当前日期");
+    await act(async () => dueButtonOf("逾期的活").click()); await wait();
+    check(document.querySelector(".plugin-due-date .todo-date-popover"), "点日期按钮打开月历");
+    check(!document.querySelector<HTMLButtonElement>(`.plugin-due-date .todo-date-popover [data-date="${dayFromNow(-3)}"]`)?.disabled,
+      "改到期日允许选择过去的日期");
+    await pickDay(dayFromNow(1));
+    check(ran.includes(`dida365/due.p1.late.${dayFromNow(1)}`), "选择新日期把该行的命名空间动作发给插件");
+    check(dueButtonOf("逾期的活").getAttribute("aria-label") === t.changeDueDate("逾期的活", monthDay(dayFromNow(1))),
+      "选完后按钮显示新日期");
+    await act(async () => dueButtonOf("学习清单的活").click()); await wait();
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>(".plugin-due-date .todo-date-popover__footer button")]
+      .find((button) => button.textContent === TRANSLATIONS[locale].notebook.clearDate)!.click());
+    await wait();
+    check(ran.includes("dida365/due.p2.study.clear"), "清除日期把 clear 动作发给插件");
+    check(dueButtonOf("学习清单的活").getAttribute("aria-label") === t.changeDueDate("学习清单的活", t.noDueDate),
+      "清除后按钮读作无到期日");
+    await act(async () => dueButtonOf("今天要做的活").click()); await wait();
+    await pickDay(dayFromNow(2));
+    check(ran.includes(`dida365/due.p1.today.${dayFromNow(2)}`), "改到期日失败时动作也已发出");
+    check(rowOf("今天要做的活").querySelector(".plugin-tasks__error")?.textContent === "TickTick due date update failed with status 500",
+      "改到期日失败在行内显示原因");
+    check(dueButtonOf("今天要做的活").getAttribute("aria-label") === t.changeDueDate("今天要做的活", monthDay(dayFromNow(0))),
+      "失败后按钮回到原日期");
     // The sort picker names the mode in force, and each option says what it does to the order.
     const sortButton = document.querySelector<HTMLButtonElement>(".plugin-tasks__aside .plugin-tasks__sort");
     check(sortButton?.getAttribute("aria-label") === `${t.sortMode}: ${t.sortModes.due.label}` && sortButton?.querySelector(".plugin-tasks__sort-name")?.textContent === t.sortModes.due.label, "排序按钮显示当前规则名，无障碍名里也带着它");

@@ -111,6 +111,11 @@ pub struct Session {
     pub status: String,
     pub updated_at: i64,
     pub action: Option<String>,
+    /// Action id prefixes this row also accepts, for editing its fields rather than completing
+    /// it (a due-day editor needs one id per day). A submitted id must start with one of these.
+    /// Prefixes end with `.`, so a shorter id cannot be matched by accident.
+    #[serde(default)]
+    pub action_prefixes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -148,6 +153,9 @@ pub fn parse_publish(line: &str, manifest: &Manifest) -> Result<Option<Contribut
     let text = |s: &str| s.len() <= 4096 && !s.contains('\0');
     let option = |value: &Option<String>| value.as_deref().is_none_or(text);
     let action = option;
+    // A prefix is a namespace, not a whole id: it must end at a dot so `due.p.t.` cannot
+    // authorize `due.p.t2.…`. One per editable field is plenty; more is a plugin bug.
+    let prefix = |value: &str| value.len() <= 256 && value.ends_with('.') && !value.contains('\0');
     let unique = |ids: Vec<&str>| {
         let mut seen = std::collections::HashSet::new();
         ids.into_iter().all(|id| !id.is_empty() && seen.insert(id))
@@ -165,7 +173,7 @@ pub fn parse_publish(line: &str, manifest: &Manifest) -> Result<Option<Contribut
             && value[8..10].parse::<u32>().is_ok_and(|day| (1..=31).contains(&day))
     };
     if c.quota.iter().any(|q| !text(&q.id) || !text(&q.label) || !percent(q.remaining_percent) || !percent(q.secondary_percent) || q.balance.as_deref().is_some_and(|b| !text(b)))
-        || c.sessions.iter().any(|s| !text(&s.id) || !text(&s.title) || !action(&s.action) || !option(&s.detail) || !["running", "waiting", "completed"].contains(&s.status.as_str()) || s.cwd.as_deref().is_some_and(|v| !text(v)) || s.kind.as_deref().is_some_and(|k| k != "agent" && k != "task") || s.due.as_deref().is_some_and(|v| !iso_date(v)) || s.list_id.as_deref().is_some_and(|v| !text(v)) || s.priority.is_some_and(|p| !(0..=5).contains(&p)) || s.bucket.as_deref().is_some_and(|v| !["overdue", "today", "future"].contains(&v)))
+        || c.sessions.iter().any(|s| !text(&s.id) || !text(&s.title) || !action(&s.action) || !option(&s.detail) || !["running", "waiting", "completed"].contains(&s.status.as_str()) || s.cwd.as_deref().is_some_and(|v| !text(v)) || s.kind.as_deref().is_some_and(|k| k != "agent" && k != "task") || s.due.as_deref().is_some_and(|v| !iso_date(v)) || s.list_id.as_deref().is_some_and(|v| !text(v)) || s.priority.is_some_and(|p| !(0..=5).contains(&p)) || s.bucket.as_deref().is_some_and(|v| !["overdue", "today", "future"].contains(&v)) || s.action_prefixes.len() > 8 || s.action_prefixes.iter().any(|v| !prefix(v)))
         || c.notifications.iter().any(|n| !action(&n.action) || [&n.id, &n.source_id, &n.app_name, &n.icon, &n.title, &n.body].iter().any(|s| !text(s)))
         || !unique(c.quota.iter().map(|q| q.id.as_str()).collect())
         || !unique(c.sessions.iter().map(|s| s.id.as_str()).collect())

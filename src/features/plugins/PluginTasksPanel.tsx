@@ -4,6 +4,7 @@ import { PluginQuotaRings } from "../agent-status/PluginQuotaRings";
 import { TodoViewSwitch, type TodoView } from "../todos/TodoViewSwitch";
 import { PluginCalendar } from "./PluginCalendar";
 import { PluginDateChips } from "./PluginDateChips";
+import { PluginDueDateEditor } from "./PluginDueDateEditor";
 import { PluginFocusButton } from "./PluginFocusButton";
 import { PluginListFilter } from "./PluginListFilter";
 import { PluginQuickAdd } from "./PluginQuickAdd";
@@ -61,6 +62,7 @@ function TaskRow({ pluginId, session, locale, showList, focus }: {
 }) {
   const t = useTranslation().plugins;
   const [pending, setPending] = useState(false);
+  const [editingDate, setEditingDate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const completed = session.status === "completed";
   const statusLabel = session.status === "waiting" ? t.waiting : session.status === "running" ? t.running : t.completed;
@@ -75,7 +77,7 @@ function TaskRow({ pluginId, session, locale, showList, focus }: {
         className="todo-check"
         type="button"
         aria-pressed={completed}
-        disabled={pending || !session.action}
+        disabled={pending || editingDate || !session.action}
         aria-label={completed ? t.reopenTask(session.title) : t.markComplete(session.title)}
         onClick={() => {
           if (!session.action || pending) return;
@@ -105,17 +107,25 @@ function TaskRow({ pluginId, session, locale, showList, focus }: {
         {detail && <span className="plugin-tasks__detail" lang={locale}>{detail}</span>}
         {error && <span className="plugin-tasks__error" role="alert">{error}</span>}
       </div>
-      {/* Starting a task is this side's own act: the provider's task is not written to. */}
       {!completed && (
-        <PluginFocusButton
-          title={session.title}
-          active={isFocused}
-          timer={isFocused ? focus.timer : null}
-          minutes={focus.minutesFor(pluginId, session.id)}
-          onToggle={() => focus.toggle(pluginId, session.id, session.title)}
-          onMinutesChange={(minutes) => focus.chooseMinutes(pluginId, session.id, minutes)}
-          onStartRound={(minutes) => focus.startRound(pluginId, session.id, session.title, minutes)}
-        />
+        <span className="plugin-tasks__actions">
+          <PluginDueDateEditor
+            pluginId={pluginId}
+            session={session}
+            onPendingChange={setEditingDate}
+            onError={setError}
+          />
+          {/* Starting a task is this side's own act: the provider's task is not written to. */}
+          <PluginFocusButton
+            title={session.title}
+            active={isFocused}
+            timer={isFocused ? focus.timer : null}
+            minutes={focus.minutesFor(pluginId, session.id)}
+            onToggle={() => focus.toggle(pluginId, session.id, session.title)}
+            onMinutesChange={(minutes) => focus.chooseMinutes(pluginId, session.id, minutes)}
+            onStartRound={(minutes) => focus.startRound(pluginId, session.id, session.title, minutes)}
+          />
+        </span>
       )}
     </div>
   );

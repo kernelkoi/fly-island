@@ -68,6 +68,14 @@ fn validates_manifest_and_protocol() {
         let row = json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"bucket":bucket}]});
         assert!(protocol::parse_publish(&publish(row), &m).is_err());
     }
+    // Extra row actions are namespaces: a prefix must end at a dot so it cannot authorize a
+    // neighbouring id, and a handful per row is all any editor needs.
+    let with_prefixes = |prefixes: serde_json::Value| json!({"sessions":[{"id":"t","title":"t","kind":"task","cwd":null,"status":"running","updatedAt":1,"action":null,"detail":null,"actionPrefixes":prefixes}]});
+    assert!(protocol::parse_publish(&publish(with_prefixes(json!(["due.p1.t1."]))), &m).unwrap().is_some());
+    assert!(protocol::parse_publish(&publish(with_prefixes(json!([]))), &m).unwrap().is_some());
+    for bad in [json!(["due.p1.t1"]), json!([""]), json!(["due.\0."]), json!(["x", "x", "x", "x", "x", "x", "x", "x", "x"])] {
+        assert!(protocol::parse_publish(&publish(with_prefixes(bad)), &m).is_err());
+    }
     let mut restricted = m.clone(); restricted.contributes.clear();
     let n = json!({"notifications":[{"id":"n","sourceId":"test","appName":"test","icon":"plugin","title":"test","body":"test","receivedAt":1,"action":null}]});
     assert!(protocol::parse_publish(&publish(n), &restricted).is_err());
@@ -518,6 +526,23 @@ fn composer_actions_are_allowed_but_undeclared_ones_are_not() {
         );
         assert_eq!(host.action("example-hello", "complete.p1.t1").unwrap_err(), "Unknown plugin action");
     }
+    // A row's own namespace: actions under the declared prefix reach the plugin, others do not.
+    let prefix = |prefixes: serde_json::Value| super::service::Live {
+        status: "running".into(), settings_configured: true,
+        data: protocol::Contributions {
+            sessions: serde_json::from_value(json!([{"id": "p1:t1", "title": "t", "kind": "task", "cwd": null, "status": "running", "updatedAt": 1, "action": null, "actionPrefixes": prefixes}])).unwrap(),
+            ..Default::default()
+        },
+    };
+    host.live.lock().unwrap().insert("example-hello".into(), prefix(json!(["due.p1.t1."])));
+    for action in ["due.p1.t1.2026-11-20", "due.p1.t1.clear"] {
+        assert_eq!(host.action("example-hello", action).unwrap_err(), "Plugin is stopped");
+    }
+    for action in ["due.p1.t2.2026-11-20", "due.p1.t1", "complete.p1.t1"] {
+        assert_eq!(host.action("example-hello", action).unwrap_err(), "Unknown plugin action");
+    }
+    host.live.lock().unwrap().insert("example-hello".into(), prefix(json!([])));
+    assert_eq!(host.action("example-hello", "due.p1.t1.2026-11-20").unwrap_err(), "Unknown plugin action");
     drop(host);
     std::fs::remove_dir_all(root).unwrap();
 }

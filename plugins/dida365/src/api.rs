@@ -116,6 +116,24 @@ pub(crate) fn create_task(token: &str, date: NaiveDate, title: &str, project_id:
     Ok(json!(true))
 }
 
+/// Change the due day, preserving the provider's other task fields. `startDate` is cleared so an
+/// old start day cannot keep the task on its previous calendar position. `None` removes both.
+pub(crate) fn update_due_date(token: &str, project_id: &str, task_id: &str, date: Option<NaiveDate>) -> Result<Value, String> {
+    let due_date = date.map(all_day_due);
+    let body = json!({"id": task_id, "projectId": project_id, "isAllDay": true, "dueDate": due_date, "startDate": Value::Null});
+    let response = ureq::post(&format!("{API_BASE}/task/{task_id}"))
+        .set("Authorization", &project_token_header(token))
+        .set("Accept", "application/json")
+        .set("Content-Type", "application/json")
+        .timeout(Duration::from_secs(10))
+        .send_string(&body.to_string())
+        .map_err(|error| format!("TickTick due date update request failed: {error}"))?;
+    if response.status() >= 400 {
+        return Err(format!("TickTick due date update failed with status {}", response.status()));
+    }
+    Ok(json!(true))
+}
+
 /// The `+HHMM` offset at `date`'s local midnight, so an all-day task keeps its calendar day on
 /// either side of UTC. A hard-coded `+0000` would write 00:00 UTC, which is the previous day west
 /// of UTC once the provider turns the instant back into local time.
