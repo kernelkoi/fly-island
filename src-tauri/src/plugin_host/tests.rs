@@ -5,6 +5,16 @@ use super::{download, manifest::Manifest, packages::{self, IndexEntry}, process:
 
 fn manifest() -> Manifest { Manifest::parse(include_bytes!("../../../plugins/example-hello/fly-island-plugin.json")).unwrap() }
 #[test]
+fn action_errors_reach_the_page_on_one_bounded_line() {
+    let reply = json!({"jsonrpc":"2.0","id":3,"error":{"code":-32000,"message":"TickTick\ncompletion failed: 401"}});
+    assert_eq!(process::action_error_message(&reply).as_deref(), Some("TickTick completion failed: 401"));
+    let reply = json!({"error":{"message":"错".repeat(400)}});
+    assert_eq!(process::action_error_message(&reply).unwrap().chars().count(), 301);
+    assert_eq!(process::action_error_message(&json!({"error":{"message":"  "}})), None);
+    assert_eq!(process::action_error_message(&json!({"error":{"code":-32601}})), None);
+}
+
+#[test]
 fn validates_manifest_and_protocol() {
     for (field, value) in [("id", json!("../escape")), ("id", json!("con")), ("apiVersion", json!(2)), ("permissions", json!(["webview"]))] {
         let mut v = serde_json::to_value(manifest()).unwrap(); v[field] = value;

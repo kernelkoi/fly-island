@@ -455,17 +455,30 @@ fn create_task(token: &str, date: NaiveDate, title: &str, project_id: Option<&st
     Ok(json!(true))
 }
 
-/// The completion time a single-task lookup reports today, or `None` when the task is still open
-/// or was finished on another day. Only `status` says whether the task is done; `completedTime`
-/// survives an undo and cannot stand in for it.
-fn verified_completion(task: &Value, today: NaiveDate) -> Option<i64> {
+/// What a single-task lookup says about a vanished row.
+enum Verified {
+    /// Finished today: the done group takes it, with the provider's completion time.
+    Completed(i64),
+    /// The provider still calls it open. The open list and the single-task endpoint can briefly
+    /// disagree, so the caller retries a few rounds instead of losing the completion.
+    StillOpen,
+    /// Finished on another day: not news for today's group.
+    NotToday,
+}
+
+/// Only `status` says whether the task is done; `completedTime` survives an undo and cannot stand
+/// in for it.
+fn verified_task(task: &Value, today: NaiveDate) -> Verified {
     let completed_at = parse_epoch_millis(&task["completedTime"])
         .or_else(|| parse_epoch_millis(&task["modifiedTime"]))
         .unwrap_or_else(now_millis);
-    if task["status"].as_i64().unwrap_or(0) == 0 || local_date_of(completed_at) != Some(today) {
-        return None;
+    if task["status"].as_i64().unwrap_or(0) == 0 {
+        return Verified::StillOpen;
     }
-    Some(completed_at)
+    if local_date_of(completed_at) != Some(today) {
+        return Verified::NotToday;
+    }
+    Verified::Completed(completed_at)
 }
 
 fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> {
@@ -527,11 +540,19 @@ fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> 
                 continue;
             }
         };
-        let Some(completed_at) = verified_completion(&task, today) else {
-            // Still open, or finished on another day: not news. Either way it needs no further check.
-            continue;
-        };
-        state.done.push(DoneEntry::from_task(known, completed_at));
+        match verified_task(&task, today) {
+            Verified::Completed(completed_at) => state.done.push(DoneEntry::from_task(known, completed_at)),
+            // The list hid the row but the provider still calls it open: the two may simply be
+            // catching up. Retry a few rounds before forgetting it, so a completion is not lost.
+            Verified::StillOpen => {
+                let misses = state.verify_misses.entry(key.clone()).or_insert(0);
+                *misses = misses.saturating_add(1);
+                if *misses < VERIFY_RETRIES {
+                    unchecked.push(key.clone());
+                }
+            }
+            Verified::NotToday => {}
+        }
     }
     // The rows this round had no time to check, plus the ones whose check failed: they stay
     // listed as they were until a later round can say whether they completed.

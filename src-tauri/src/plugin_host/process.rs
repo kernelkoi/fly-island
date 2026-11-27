@@ -175,7 +175,10 @@ fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop
                             // empty list here would read as "the plugin has no tasks".
                             publish(stale_of(last), "running");
                         } else if let Some((_, reply)) = pending.remove(&id) {
-                            let value = v.get("result").cloned().ok_or_else(|| "Plugin action failed".to_owned());
+                            let value = match v.get("result") {
+                                Some(result) => Ok(result.clone()),
+                                None => Err(action_error_message(&v).unwrap_or_else(|| "Plugin action failed".to_owned())),
+                            };
                             let _ = reply.send(value);
                         }
                     } else if let Some(c) = contribution {
@@ -205,6 +208,21 @@ fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop
     let _ = child.kill();
     let _ = child.wait();
     result
+}
+
+/// The message a failed action carries, as the page may show it: one line, bounded. The plugin
+/// chooses the words (an expired token and rate limiting need different answers); the host only
+/// guarantees the shape, so a stray dump cannot take over the row.
+pub(super) fn action_error_message(reply: &Value) -> Option<String> {
+    const MAX: usize = 300;
+    let message = reply["error"]["message"].as_str()?.trim();
+    if message.is_empty() { return None; }
+    let line = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    Some(if line.chars().count() > MAX {
+        line.chars().take(MAX).chain(std::iter::once('…')).collect()
+    } else {
+        line
+    })
 }
 
 fn redact(mut line: String, secrets: &[String]) -> String {

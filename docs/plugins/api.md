@@ -54,12 +54,12 @@ On stop the host attempts shutdown, waits up to three seconds, then kills/waits 
 For failure send error instead of result:
 
 ```json
-{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Action failed"}}
+{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Token expired; sign in again"}}
 ```
 
-清单 actions 生成设置页按钮；会话/消息 action 是插件选择的不透明字符串，必须在最近一次快照中仍存在。宿主仅允许这两类已知动作——插件最近一次 publish 带 `composer: true` 时，还允许以 `create.` 开头的动作（快速添加待办，标题由插件解析、非法则返回错误）。传给插件的参数**只有 id**，不传路径、会话对象或其他 payload。插件在自身内存中映射 id 到安全目标，不把 id 当 shell 命令/任意 URL。无 action 的条目可展示但不能跳转。result 只完成调用，不更新设置或快照；需另行 publish。宿主不直接展示插件 error.message；SDK 将 action 错误归一为上述通用响应。
+清单 actions 生成设置页按钮；会话/消息 action 是插件选择的不透明字符串，必须在最近一次快照中仍存在。宿主仅允许这两类已知动作——插件最近一次 publish 带 `composer: true` 时，还允许以 `create.` 开头的动作（快速添加待办，标题由插件解析、非法则返回错误）。传给插件的参数**只有 id**，不传路径、会话对象或其他 payload。插件在自身内存中映射 id 到安全目标，不把 id 当 shell 命令/任意 URL。无 action 的条目可展示但不能跳转。result 只完成调用，不更新设置或快照；需另行 publish。宿主把插件 `error.message` 截成一行（≤300 字符）显示在触发动作的那一行，没有 message 时回退通用错误；SDK 原样传递插件返回的错误文案，所以文案要面向用户，且不得包含令牌、口令或响应体。
 
-Manifest actions create settings buttons. Session/message actions are opaque strings chosen by the plugin and must remain in its latest snapshot. Only these two kinds are allowed — plus, when the latest publish carries `composer: true`, actions starting with `create.` (quick-adding a todo; the plugin parses the title and answers error if it is invalid). The host sends **only the action ID**, no path, object or extra payload. Keep a validated ID-to-target mapping inside the process; never interpret IDs as shell commands or arbitrary URLs. Entries without actions display but cannot navigate. A result completes the call without updating settings/snapshots; publish separately. The host does not surface plugin error.message directly; the SDK normalizes action failures to the generic response above.
+Manifest actions create settings buttons. Session/message actions are opaque strings chosen by the plugin and must remain in its latest snapshot. Only these two kinds are allowed — plus, when the latest publish carries `composer: true`, actions starting with `create.` (quick-adding a todo; the plugin parses the title and answers error if it is invalid). The host sends **only the action ID**, no path, object or extra payload. Keep a validated ID-to-target mapping inside the process; never interpret IDs as shell commands or arbitrary URLs. Entries without actions display but cannot navigate. A result completes the call without updating settings/snapshots; publish separately. The host shows the plugin's `error.message` on the row that triggered the action as one line of at most 300 characters, falling back to a generic error when it is missing. The SDK passes the message through, so word it for the user and keep tokens, secrets and response bodies out of it.
 
 长时间登录异步启动并立即返回，网络请求有超时。SDK poll/action 在同一个循环中执行，阻塞 poll 同样阻塞下一条 action/shutdown；耗时工作放到可取消 worker，poll 只读缓存。
 

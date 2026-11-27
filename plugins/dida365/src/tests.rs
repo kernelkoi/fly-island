@@ -129,14 +129,15 @@ fn a_verified_lookup_counts_only_a_completion_the_provider_reports_for_today() {
     let today = Local::now().date_naive();
     let now = now_millis();
     let done = json!({"id": "t1", "status": 2, "completedTime": now});
-    assert_eq!(verified_completion(&done, today), Some(now));
-    // completedTime 在撤销后可能残留旧值：status 0 就是没完成。
+    assert!(matches!(verified_task(&done, today), Verified::Completed(at) if at == now));
+    // completedTime 在撤销后可能残留旧值：status 0 就是没完成，但列表与单条接口可能短暂不一致，
+    // 所以保留重试而不是直接丢掉。
     let open = json!({"id": "t2", "status": 0, "completedTime": now});
-    assert_eq!(verified_completion(&open, today), None);
+    assert!(matches!(verified_task(&open, today), Verified::StillOpen));
     // 昨天完成的，不进今天的已完成分组。
     let yesterday = now - 24 * 60 * 60 * 1000;
     let old = json!({"id": "t3", "status": 2, "completedTime": yesterday});
-    assert_eq!(verified_completion(&old, today), None);
+    assert!(matches!(verified_task(&old, today), Verified::NotToday));
 }
 
 #[test]

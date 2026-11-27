@@ -220,7 +220,9 @@ pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value,
                     Some("action") if ready => {
                         match action(v["params"]["id"].as_str().unwrap_or_default(), &settings) {
                             Ok(result) => send(json!({"jsonrpc":"2.0","id":id,"result":result})),
-                            Err(_) => send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":"Action failed"}})),
+                            // The plugin's own words say what failed (expired token, rate limit);
+                            // the host shows them in the page and bounds the length.
+                            Err(message) => send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":message}})),
                         }.map_err(|e| e.to_string())?;
                         next = Instant::now();
                     }
