@@ -246,7 +246,7 @@ if (query.has("shoulderSweep") || query.has("shapePerf")) {
     };
     await drag(".dot-button--todo", ".dot-button--clipboard");
     const savedOrder = JSON.parse(localStorage.getItem("fly-island-settings") ?? "{}").pageOrder as string[] | undefined;
-    check(dotOrder().join() === "music,clipboard,todo,shelf,translation" && savedOrder?.join() === "music,clipboard,todo,shelf,translation,battery" && island().className === pageBefore,
+    check(dotOrder().join() === "music,clipboard,todo,shelf,translation,qq" && savedOrder?.join() === "music,clipboard,todo,shelf,translation,qq,battery" && island().className === pageBefore,
       `拖动页面圆点可以调整顺序并保存，拖完不切页（${dotOrder().join()}）`);
     await drag(".dot-button--todo", ".dot-button--music");
     check(dotOrder()[0] === "todo", "圆点可以拖回原来的位置");
