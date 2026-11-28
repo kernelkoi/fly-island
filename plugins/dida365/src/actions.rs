@@ -3,10 +3,9 @@
 use chrono::NaiveDate;
 use fly_island_plugin_sdk::{json, Value};
 use std::cell::RefCell;
-use crate::api::{complete_task, create_task, fetch_projects, reopen_task, update_due_date};
-use crate::model::{now_millis, DoneEntry, PluginState, TaskEntry};
-use crate::poll::{refresh, refresh_list, republish};
-use crate::sessions::DONE_CAP;
+use crate::api::{complete_task, create_task, fetch_projects, reopen_task, update_due_date, Api};
+use crate::model::{entry_from_task, now_millis, DoneEntry, PluginState, TaskEntry};
+use crate::sessions::{snapshot_from_memory, DONE_CAP};
 
 /// `create.<YYYY-MM-DD>.<title>`: the title may contain dots, so split only after the date.
 /// `create.<date>.<title>` uses the plugin's default inbox; `create.<date>.list:<id>.<title>`
@@ -55,26 +54,32 @@ pub(crate) fn parse_due_action(action_id: &str) -> Option<(&str, &str, Option<Na
     Some((project_id, task_id, date))
 }
 
-/// Runs one action. The connection test borrows no memory, so it reaches the provider before the
-/// state is taken.
-pub(crate) fn handle(action_id: &str, token: &str, state: &RefCell<PluginState>) -> Result<Value, String> {
+/// Runs one action. After a confirmed write, publish what memory can show and leave refresh
+/// reads to the SDK's poll after the reply.
+pub(crate) fn handle(
+    action_id: &str,
+    api: &Api<'_>,
+    state: &RefCell<PluginState>,
+    publish: impl FnOnce(Value),
+) -> Result<Value, String> {
     if action_id == "test" {
         // The settings "test connection" button: one real request tells the user whether the
         // token still works, without waiting for a poll or a failed checkbox.
-        fetch_projects(token)?;
+        fetch_projects(api)?;
         return Ok(json!(true));
     }
     let mut state = state.borrow_mut();
     if let Some((project_id, task_id, date)) = parse_due_action(action_id) {
-        update_due_date(token, project_id, task_id, date)?;
+        update_due_date(api, project_id, task_id, date)?;
         let key = format!("{project_id}:{task_id}");
         if let Some(entry) = state.last_open.get_mut(&key) {
             entry.due_date = date;
             entry.modified_at = now_millis();
             state.verify_misses.remove(&key);
-            republish(&mut state);
-        } else {
-            refresh(token, &mut state);
+            publish(snapshot_from_memory(&state));
+        } else if let Some(entry) = state.done.iter_mut().find(|entry| entry.key == key) {
+            entry.due_date = date;
+            publish(snapshot_from_memory(&state));
         }
         return Ok(json!(true));
     }
@@ -82,9 +87,23 @@ pub(crate) fn handle(action_id: &str, token: &str, state: &RefCell<PluginState>)
         return Err("Invalid TickTick due date action".to_owned());
     }
     if let Some((date, project_id, title)) = parse_create_action(action_id) {
-        create_task(token, date, title, project_id)?;
-        // Only the receiving list changed: one request instead of the whole fan-out.
-        refresh_list(token, &mut state, project_id.unwrap_or("inbox"));
+        if let Some(response) = create_task(api, date, title, project_id)? {
+            let task = response.get("data").unwrap_or(&response);
+            // Use the same inbox id as the poll, even if the POST response uses an internal id.
+            let project_id = project_id.unwrap_or("inbox");
+            let project_name = state.last_open.values()
+                .find(|entry| entry.project_id == project_id)
+                .map_or("", |entry| entry.project_name.as_str());
+            let title = task["title"].as_str().or_else(|| task["content"].as_str());
+            if let Some(entry) = entry_from_task(task, project_id, project_name).filter(|entry| {
+                entry.completed_at.is_none() && !entry.id.trim().is_empty() && title.is_some()
+            }) {
+                let key = format!("{}:{}", entry.project_id, entry.id);
+                state.published.insert(key.clone());
+                state.last_open.insert(key, entry);
+                publish(snapshot_from_memory(&state));
+            }
+        }
         return Ok(json!(true));
     }
     // A `create.` action that fails to parse must come back as an error, not a plain
@@ -93,32 +112,28 @@ pub(crate) fn handle(action_id: &str, token: &str, state: &RefCell<PluginState>)
         return Err("Invalid TickTick quick add action".to_owned());
     }
     if let Some((project_id, task_id)) = parse_id_action(action_id, "reopen.") {
-        reopen_task(token, project_id, task_id)?;
+        reopen_task(api, project_id, task_id)?;
         let key = format!("{project_id}:{task_id}");
-        let reopened = state
-            .done
-            .iter()
-            .position(|entry| entry.key == key)
-            .map(|index| state.done.remove(index));
-        match reopened {
-            Some(entry) => {
-                // Put the row back where the open list draws it, from what the done row still
-                // knows; the next poll refreshes it with the provider's copy.
-                state.last_open.insert(key.clone(), TaskEntry {
-                    id: entry.task_id,
-                    project_id: entry.project_id,
-                    project_name: entry.project_name,
-                    title: entry.title,
-                    due_date: entry.due_date,
-                    modified_at: now_millis(),
-                    repeat_flag: entry.repeat_flag,
-                    priority: entry.priority,
-                    completed_at: None,
-                });
-                state.published.insert(key);
-                republish(&mut state);
-            }
-            None => refresh(token, &mut state),
+        let modified_at = now_millis();
+        if let Some(index) = state.done.iter().position(|entry| entry.key == key) {
+            let entry = state.done.remove(index);
+            state.last_open.insert(key.clone(), TaskEntry {
+                id: entry.task_id,
+                project_id: entry.project_id,
+                project_name: entry.project_name,
+                title: entry.title,
+                due_date: entry.due_date,
+                modified_at,
+                repeat_flag: entry.repeat_flag,
+                priority: entry.priority,
+                completed_at: None,
+            });
+        }
+        if let Some(entry) = state.last_open.get_mut(&key) {
+            entry.modified_at = modified_at;
+            state.verify_misses.remove(&key);
+            state.published.insert(key);
+            publish(snapshot_from_memory(&state));
         }
         return Ok(json!(true));
     }
@@ -128,19 +143,16 @@ pub(crate) fn handle(action_id: &str, token: &str, state: &RefCell<PluginState>)
     let Some((project_id, task_id)) = parse_id_action(action_id, "complete.") else {
         return Err("Unknown TickTick action".to_owned());
     };
-    complete_task(token, project_id, task_id)?;
+    complete_task(api, project_id, task_id)?;
     let key = format!("{project_id}:{task_id}");
-    match state.last_open.get(&key).cloned() {
-        Some(entry) => {
-            // The provider confirmed the completion; move the row now and let the next poll
-            // reconcile. A single checkbox costs no request fan-out.
-            state.done.push(DoneEntry::from_task(&entry, now_millis()));
-            state.done.sort_by_key(|entry| std::cmp::Reverse(entry.completed_at));
-            state.done.truncate(DONE_CAP);
-            republish(&mut state);
-        }
-        // This process never saw the row (its page came from a previous run's snapshot).
-        None => refresh(token, &mut state),
+    if let Some(entry) = state.last_open.remove(&key) {
+        state.published.remove(&key);
+        state.verify_misses.remove(&key);
+        state.done.retain(|entry| entry.key != key);
+        state.done.push(DoneEntry::from_task(&entry, now_millis()));
+        state.done.sort_by_key(|entry| std::cmp::Reverse(entry.completed_at));
+        state.done.truncate(DONE_CAP);
+        publish(snapshot_from_memory(&state));
     }
     Ok(json!(true))
 }

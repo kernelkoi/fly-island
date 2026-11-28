@@ -1,9 +1,9 @@
 // A poll: fetch every list, reconcile what vanished, and publish a fresh snapshot.
 
 use chrono::{Local, NaiveDate};
-use fly_island_plugin_sdk::{empty, json, publish, stale, Value};
+use fly_island_plugin_sdk::{json, Value};
 use std::collections::HashSet;
-use crate::api::{fetch_project_tasks, fetch_projects, fetch_task};
+use crate::api::{fetch_project_tasks, fetch_projects, fetch_task, Api};
 use crate::model::{local_date_of, now_millis, parse_epoch_millis, DoneEntry, PluginState};
 use crate::sessions::{snapshot_from_memory, DONE_CAP};
 
@@ -40,8 +40,8 @@ pub(crate) fn verified_task(task: &Value, today: NaiveDate) -> Verified {
     Verified::Completed(completed_at)
 }
 
-pub(crate) fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Value, String> {
-    let mut projects = fetch_projects(token)?;
+pub(crate) fn poll_ticktick(api: &Api<'_>, state: &mut PluginState) -> Result<Value, String> {
+    let mut projects = fetch_projects(api)?;
     // The project list usually omits the inbox, but its special id still exposes its data.
     // The name stays empty: the UI labels the inbox itself, in the user's language.
     if !projects.iter().any(|project| project["id"] == "inbox") {
@@ -65,15 +65,20 @@ pub(crate) fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Valu
         .collect();
     let mut open = Vec::new();
     let mut reported_done = Vec::new();
+    let mut failed_lists: HashSet<String> = HashSet::new();
+    let mut any_list_succeeded = false;
     for chunk in lists.chunks(FETCH_CONCURRENCY) {
         std::thread::scope(|scope| {
             let handles: Vec<_> = chunk.iter().map(|(id, name)| {
-                let id = id.clone();
-                let name = name.clone();
-                scope.spawn(move || fetch_project_tasks(token, &id, &name).unwrap_or_default())
+                (id.as_str(), scope.spawn(move || fetch_project_tasks(api, id, name)))
             }).collect();
-            for handle in handles {
-                for entry in handle.join().unwrap_or_default() {
+            for (id, handle) in handles {
+                let Ok(Ok(entries)) = handle.join() else {
+                    failed_lists.insert(id.to_owned());
+                    continue;
+                };
+                any_list_succeeded = true;
+                for entry in entries {
                     match entry.completed_at {
                         Some(at) => reported_done.push((entry, at)),
                         None => open.push(entry),
@@ -82,15 +87,25 @@ pub(crate) fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Valu
             }
         });
     }
+    if !any_list_succeeded {
+        return Err("TickTick task lists unavailable".to_owned());
+    }
 
     let open_keys: HashSet<String> = open.iter().map(|entry| format!("{}:{}", entry.project_id, entry.id)).collect();
-    state.published = open_keys.clone();
+    // A failed list gives no evidence that its rows vanished. Keep its published rows and
+    // pending lookups, including edits that were just confirmed by a POST.
+    state.published.retain(|key| state.last_open.get(key)
+        .is_some_and(|entry| failed_lists.contains(entry.project_id.as_str())));
+    state.published.extend(open_keys.iter().cloned());
     // A row that vanished from the open list either completed or was deleted, and only the
     // provider can say which. Verifying a few of them per poll keeps a bulk delete from turning
     // into a burst of requests. The ones not checked yet stay in `last_open`, so a bulk
     // completion is confirmed over the next rounds instead of being lost. A 404/410 settles the
     // row as gone and a transport error retries a few times, so no row holds a check slot forever.
-    let vanished: Vec<String> = state.last_open.keys().filter(|key| !open_keys.contains(*key)).cloned().collect();
+    let vanished: Vec<String> = state.last_open.iter()
+        .filter(|(key, entry)| !open_keys.contains(*key) && !failed_lists.contains(entry.project_id.as_str()))
+        .map(|(key, _)| key.clone())
+        .collect();
     let mut unchecked: Vec<String> = Vec::new();
     for key in vanished.iter().take(CHECK_LIMIT) {
         if state.done.iter().any(|entry| &entry.key == key) {
@@ -99,7 +114,7 @@ pub(crate) fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Valu
         let Some(known) = state.last_open.get(key) else {
             continue;
         };
-        let task = match fetch_task(token, &known.project_id, &known.id) {
+        let task = match fetch_task(api, &known.project_id, &known.id) {
             // Deleted or moved elsewhere: nothing left to verify. Leaving the key out of the
             // rebuilt `last_open` forgets the row for good instead of asking every round.
             Ok(None) => continue,
@@ -131,10 +146,6 @@ pub(crate) fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Valu
     // The rows this round had no time to check, plus the ones whose check failed: they stay
     // listed as they were until a later round can say whether they completed.
     let pending: HashSet<&String> = vanished.iter().skip(CHECK_LIMIT).chain(unchecked.iter()).collect();
-    let still_open: Vec<&String> = vanished
-        .iter()
-        .filter(|key| pending.contains(*key) && !state.done.iter().any(|done| &done.key == *key))
-        .collect();
     for (entry, at) in reported_done {
         if local_date_of(at) != Some(today) {
             continue;
@@ -150,63 +161,18 @@ pub(crate) fn poll_ticktick(token: &str, state: &mut PluginState) -> Result<Valu
     state.done.truncate(DONE_CAP);
     // The open rows, plus the vanished ones still waiting for their check, so a bulk completion is
     // confirmed over the next rounds instead of being forgotten.
-    let previous = state.last_open.clone();
-    state.last_open = open.iter().map(|entry| (format!("{}:{}", entry.project_id, entry.id), entry.clone())).collect();
-    for &key in &still_open {
-        if let Some(entry) = previous.get(key) {
-            state.last_open.insert(key.clone(), entry.clone());
-        }
-    }
+    state.last_open.retain(|key, entry| {
+        failed_lists.contains(entry.project_id.as_str())
+            || (pending.contains(key) && !state.done.iter().any(|done| &done.key == key))
+    });
+    state.last_open.extend(open.into_iter().map(|entry| (format!("{}:{}", entry.project_id, entry.id), entry)));
     // Retry counts belong only to rows still waiting for a verdict; a settled or forgotten row
     // takes its count with it.
     let waiting: HashSet<String> = state.last_open.keys().cloned().collect();
     state.verify_misses.retain(|key, _| waiting.contains(key));
+    // The host keeps the rows it last showed for these lists: a process restarted after a crash
+    // has no memory of them, and only the host still has them.
+    state.failed_lists = failed_lists;
 
     Ok(snapshot_from_memory(state))
-}
-
-/// Republish what memory already knows, so a click does not wait on the provider's whole list.
-pub(crate) fn republish(state: &mut PluginState) {
-    let snapshot = snapshot_from_memory(state);
-    state.last = Some(snapshot.clone());
-    let _ = publish(snapshot);
-}
-
-/// A full refresh for an action whose effect memory cannot show (quick add, or a row this process
-/// never saw). The action itself already reached the provider, so a refresh that fails here
-/// republishes the previous snapshot marked stale rather than a wrong or empty page.
-pub(crate) fn refresh(token: &str, state: &mut PluginState) {
-    let snapshot = match poll_ticktick(token, state) {
-        Ok(snapshot) => snapshot,
-        Err(_) => stale(state.last.clone().unwrap_or_else(empty)),
-    };
-    state.last = Some(snapshot.clone());
-    let _ = publish(snapshot);
-}
-
-/// Refresh one list after a quick add: the new row needs the id the provider assigned, but the
-/// other lists have not changed. Rows missing from the reply stay on the page until the next full
-/// poll reconciles them, and a failed fetch leaves the page as it was (the task exists either way).
-pub(crate) fn refresh_list(token: &str, state: &mut PluginState, project_id: &str) {
-    let name = if project_id == "inbox" {
-        String::new()
-    } else if let Some(entry) = state.last_open.values().find(|entry| entry.project_id == project_id) {
-        entry.project_name.clone()
-    } else {
-        let Ok(projects) = fetch_projects(token) else { return };
-        let Some(project) = projects.iter().find(|project| project["id"] == project_id) else { return };
-        project["name"].as_str().unwrap_or_default().to_owned()
-    };
-    let Ok(entries) = fetch_project_tasks(token, project_id, &name) else { return };
-    for entry in entries {
-        // A row the provider reports as done belongs to the done group, which the next full poll
-        // fills; drawing it as open here would offer a check that completes it twice.
-        if entry.completed_at.is_some() {
-            continue;
-        }
-        let key = format!("{}:{}", entry.project_id, entry.id);
-        state.last_open.insert(key.clone(), entry);
-        state.published.insert(key);
-    }
-    republish(state);
 }

@@ -18,6 +18,7 @@ import { useLocale, useTranslation } from "../../i18n";
 import type { PluginPageText } from "../../i18n/sections/plugins";
 import { getLocalDateString } from "../../utils/date";
 import { runPluginAction, type PluginQuota, type PluginSession, type Localized } from "./api";
+import { pluginFailureDetail } from "./errors";
 import { usePlugins } from "./usePlugins";
 import "../todos/TodoListItem.css";
 import "./PluginTasksPanel.css";
@@ -86,7 +87,7 @@ function TaskRow({ pluginId, session, locale, showList, focus }: {
           // Completing moves the row into the done group, undoing moves it back out. Either way
           // the plugin republishes; on failure the row stays here and says why.
           void runPluginAction(pluginId, session.action)
-            .catch((actionError) => setError(String(actionError)))
+            .catch((actionError) => setError(pluginFailureDetail(actionError, t) ?? String(actionError)))
             .finally(() => setPending(false));
         }}
       >
@@ -132,7 +133,7 @@ function TaskRow({ pluginId, session, locale, showList, focus }: {
 }
 
 /** One plugin block: its name, the todo/calendar switch, and the open view. */
-function PluginBlock({ id, name, quota, composer, sessions, stale, configured }: { id: string; name: Localized; quota: PluginQuota[]; composer: boolean; sessions: PluginSession[]; stale: boolean; configured: boolean }) {
+function PluginBlock({ id, name, quota, composer, sessions, stale, configured, available }: { id: string; name: Localized; quota: PluginQuota[]; composer: boolean; sessions: PluginSession[]; stale: boolean; configured: boolean; available: boolean }) {
   const { locale } = useLocale();
   const t = useTranslation();
   // The task being worked on, shared with the collapsed island.
@@ -226,7 +227,7 @@ function PluginBlock({ id, name, quota, composer, sessions, stale, configured }:
           {isCalendar ? (
             // The calendar follows the list filter so quick add lands in it too; the date chips
             // belong to the list — the month grid is already a view of every day.
-            <PluginCalendar pluginId={id} sessions={inList} composer={composer} listId={activeListId} />
+            <PluginCalendar pluginId={id} sessions={inList} composer={composer} listId={activeListId} available={available} />
           ) : (
             <>
               {/* Right above the add box: the window narrows the rows below it, "and" with the
@@ -240,6 +241,7 @@ function PluginBlock({ id, name, quota, composer, sessions, stale, configured }:
                     pluginId={id}
                     listId={activeListId}
                     placeholder={t.plugins.addTaskFor(t.notebook.dayToday)}
+                    disabled={!available}
                   />
                 </div>
               )}
@@ -277,16 +279,20 @@ export function PluginTasksPanel(): ReactNode {
       const live = snapshot.live[id];
       // An unconfigured or stale plugin keeps its block even with nothing to show: its state
       // line replaces the rows, instead of the page reading both as "no plugin published tasks".
-      if (!live || live.status !== "running") return [];
+      // A supervisor restart keeps it too, so a quick add awaiting its answer does not lose the
+      // text and the check-before-retry note; a first start with nothing yet still stays hidden.
+      const recovering = live?.status === "restarting" || live?.status === "failed";
+      const booting = live?.status === "starting";
+      if (!live || (live.status !== "running" && !recovering && !booting)) return [];
       const hasContent = live.sessions.length > 0 || live.quota.length > 0 || live.composer === true;
-      if (!hasContent && !live.stale && live.settingsConfigured !== false) return [];
-      return [{ id, name: p.manifest.name, quota: live.quota, composer: live.composer === true, sessions: live.sessions, stale: live.stale === true, configured: live.settingsConfigured !== false }];
+      if (!hasContent && (!live.stale || booting) && live.settingsConfigured !== false) return [];
+      return [{ id, name: p.manifest.name, quota: live.quota, composer: live.composer === true, sessions: live.sessions, stale: live.stale === true, configured: live.settingsConfigured !== false, available: live.status === "running" }];
     });
   return (
     <div className="plugin-tasks">
       {plugins.length === 0
         ? <p className="plugin-tasks__empty">{t.empty}</p>
-        : plugins.map((p) => <PluginBlock key={p.id} id={p.id} name={p.name} quota={p.quota} composer={p.composer} sessions={p.sessions} stale={p.stale} configured={p.configured} />)}
+        : plugins.map((p) => <PluginBlock key={p.id} id={p.id} name={p.name} quota={p.quota} composer={p.composer} sessions={p.sessions} stale={p.stale} configured={p.configured} available={p.available} />)}
     </div>
   );
 }

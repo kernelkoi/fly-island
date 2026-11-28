@@ -3,6 +3,7 @@ import { getLocalDateString } from "../../utils/date";
 import { useLocale, useTranslation } from "../../i18n";
 import { TodoDatePicker } from "../todos/TodoDatePicker";
 import { runPluginAction, type PluginSession } from "./api";
+import { pluginFailureDetail } from "./errors";
 import "./PluginDueDateEditor.css";
 
 /** The namespace a row declared for its due-day editor. The plugins page is generic, so the
@@ -49,7 +50,7 @@ export function PluginDueDateEditor({ pluginId, session, onPendingChange, onErro
     } catch (error) {
       setSelected(session.due ?? null);
       setOptimistic(false);
-      onError(String(error));
+      onError(pluginFailureDetail(error, t) ?? String(error));
     } finally {
       setPending(false);
       onPendingChange(false);

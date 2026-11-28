@@ -19,6 +19,13 @@ test("download failures keep their own codes", () => {
   assert.equal(pluginFailureCode("error decoding response body"), undefined);
 });
 
+test("action expiry and an unconfirmed write have distinct recovery instructions", () => {
+  const messages = { actionExpired: "The action did not start. Try again.", actionUnconfirmed: "Check the original app before retrying." };
+  assert.equal(pluginFailureDetail("plugin_action_expired", messages), "The action did not start. Try again.");
+  assert.equal(pluginFailureDetail(new Error("plugin_action_unconfirmed"), messages), "Check the original app before retrying.");
+  assert.equal(pluginFailureDetail("  401 Unauthorized  ", messages), "401 Unauthorized");
+});
+
 test("a plugin's own action error is shown, host failures stay localized", () => {
   assert.equal(pluginFailureDetail(new Error("Token expired; sign in again")), "Token expired; sign in again");
   assert.equal(pluginFailureDetail("  401 Unauthorized  "), "401 Unauthorized");

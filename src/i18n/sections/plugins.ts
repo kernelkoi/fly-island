@@ -9,6 +9,8 @@ export type PluginPageText = {
   notConfigured: string;
   /** The refresh failed; the rows shown are the last good snapshot, kept with a note. */
   refreshFailed: string;
+  actionExpired: string;
+  actionUnconfirmed: string;
   /** Configured but nothing unfinished: a third state, distinct from both lines above. */
   noTasks: string;
   /** The provider's default inbox list: rows from it carry no name, the UI names it. */
@@ -67,6 +69,8 @@ export const zhCN: PluginPageText = {
   empty: "启用的插件还没有发布任务",
   notConfigured: "插件还没有配置，去设置里填 API 口令",
   refreshFailed: "刷新失败，显示的是上次的数据",
+  actionExpired: "操作排队超时，尚未执行。请重试。",
+  actionUnconfirmed: "操作结果未确认。请先到原应用核对，再决定是否重试。",
   noTasks: "没有待办",
   inbox: "收集箱",
   repeatsToday: "重复任务 · 今天",
@@ -108,6 +112,8 @@ export const en: PluginPageText = {
   empty: "No enabled plugin has published tasks yet",
   notConfigured: "Not configured yet — add the API token in Settings",
   refreshFailed: "Refresh failed; showing the last snapshot",
+  actionExpired: "The action timed out before it started. Try again.",
+  actionUnconfirmed: "Result not confirmed. Check the original app before retrying.",
   noTasks: "No tasks",
   inbox: "Inbox",
   repeatsToday: "Repeats today",

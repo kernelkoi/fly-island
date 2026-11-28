@@ -4,6 +4,7 @@ import { getLocalDateString } from "../../utils/date";
 import { useTranslation } from "../../i18n";
 import { TodoDatePicker } from "../todos/TodoDatePicker";
 import { runPluginAction } from "./api";
+import { pluginFailureDetail } from "./errors";
 import "../todos/TodoNotebook.css";
 import "./PluginQuickAdd.css";
 
@@ -17,12 +18,14 @@ const TITLE_LIMIT = 200;
  * either the day is resolved at submit, so a window left open overnight does not add to the
  * previous day.
  */
-export function PluginQuickAdd({ pluginId, date, listId, placeholder, className = "" }: {
+export function PluginQuickAdd({ pluginId, date, listId, placeholder, className = "", disabled = false }: {
   pluginId: string;
   date?: string;
   listId?: string | null;
   placeholder: string;
   className?: string;
+  /** False while the worker restarts: keep the draft, send nothing until the plugin is back. */
+  disabled?: boolean;
 }) {
   const t = useTranslation().plugins;
   const [draft, setDraft] = useState("");
@@ -32,10 +35,11 @@ export function PluginQuickAdd({ pluginId, date, listId, placeholder, className 
   const today = getLocalDateString();
   // The calendar hands in its selected day; only the list view picks one here.
   const picksDate = date === undefined;
+  const busy = adding || disabled;
 
   const add = async () => {
     const title = draft.trim();
-    if (!title || adding) return;
+    if (!title || busy) return;
     if ([...title].length > TITLE_LIMIT) {
       setError(t.titleTooLong);
       return;
@@ -49,8 +53,8 @@ export function PluginQuickAdd({ pluginId, date, listId, placeholder, className 
       await runPluginAction(pluginId, `create.${day}.${target}${title}`);
       setDraft("");
     } catch (actionError) {
-      // Keep the text so the user can retry; the host's error shows as-is.
-      setError(String(actionError));
+      // Keep the draft; an unconfirmed submission needs checking before it is retried.
+      setError(pluginFailureDetail(actionError, t) ?? String(actionError));
     } finally {
       setAdding(false);
     }
@@ -71,7 +75,7 @@ export function PluginQuickAdd({ pluginId, date, listId, placeholder, className 
           placeholder={placeholder}
           aria-label={placeholder}
           spellCheck={false}
-          disabled={adding}
+          disabled={busy}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -83,7 +87,7 @@ export function PluginQuickAdd({ pluginId, date, listId, placeholder, className 
         {picksDate && (
           // Fixed like the rows' editors: the plugin page scrolls, and its own overflow would clip
           // the month opened from the calendar's bottom row.
-          <TodoDatePicker value={chosenDate} today={today} disabled={adding} onChange={setChosenDate} popoverPlacement="fixed" />
+          <TodoDatePicker value={chosenDate} today={today} disabled={busy} onChange={setChosenDate} popoverPlacement="fixed" />
         )}
       </form>
       {error && <p className="plugin-quick-add__error" role="alert">{error}</p>}

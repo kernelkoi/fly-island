@@ -8,7 +8,7 @@ mod model;
 mod poll;
 mod sessions;
 
-use fly_island_plugin_sdk::{empty, run};
+use fly_island_plugin_sdk::{empty, publish, run};
 use model::PluginState;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,17 +20,21 @@ fn main() {
     if run(Duration::from_secs(180), move |settings| {
         let token = settings["token"].as_str().map(str::trim).filter(|value| !value.is_empty());
         let Some(token) = token else {
+            poll_state.borrow_mut().host_failed_lists = false;
             return Ok(empty());
         };
         let mut state = poll_state.borrow_mut();
-        let snapshot = poll::poll_ticktick(token, &mut state)?;
-        state.last = Some(snapshot.clone());
-        Ok(snapshot)
+        // Reserved host capability; absent on older hosts, which reject the publish field.
+        state.host_failed_lists = settings["_host-failed-task-lists"] == true;
+        poll::poll_ticktick(&api::Api::new(token), &mut state)
     }, move |action_id, settings| {
         let Some(token) = settings["token"].as_str().map(str::trim).filter(|value| !value.is_empty()) else {
             return Err("TickTick API token is missing".to_owned());
         };
-        actions::handle(action_id, token, &state)
+        state.borrow_mut().host_failed_lists = settings["_host-failed-task-lists"] == true;
+        actions::handle(action_id, &api::Api::new(token), &state, |snapshot| {
+            let _ = publish(snapshot);
+        })
     }).is_err() {
         std::process::exit(1);
     }

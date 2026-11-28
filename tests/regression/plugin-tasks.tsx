@@ -4,7 +4,7 @@ import { I18nProvider, TRANSLATIONS } from "../../src/i18n";
 import { PluginTasksPanel } from "../../src/features/plugins/PluginTasksPanel";
 import { PluginFocusProvider } from "../../src/features/plugins/PluginFocusContext";
 import { PLUGIN_RUNTIME_ENABLED } from "../../src/features/releaseFlags.ts";
-import { dayFromNow, dayToday, locale, name, ran, t, todoText } from "./pluginTasksFixture.ts";
+import { dayFromNow, dayToday, locale, name, ran, setDidaStatus, t, todoText } from "./pluginTasksFixture.ts";
 import "../../src/styles/tokens.css";
 import "../../src/styles/base.css";
 import "../../src/features/plugins/PluginTasksPanel.css";
@@ -213,6 +213,36 @@ try {
     check(failAdd?.value === "失败添加", "添加失败后输入保留");
     check(document.querySelector(".plugin-tasks__add .plugin-quick-add__error")?.textContent === "TickTick create failed with status 500",
       "添加失败在输入框下显示行内错误");
+    for (const [draft, message] of [["未确认", t.actionUnconfirmed], ["排队过期", t.actionExpired]]) {
+      await act(async () => {
+        setter.call(failAdd, draft);
+        failAdd!.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => failAdd!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      await wait();
+      check(failAdd?.value === draft && document.querySelector('.plugin-tasks__add [role="alert"]')?.textContent === message,
+        "新建未确认与未执行的提示不同，且都保留输入");
+      check(ran.filter((id) => id.endsWith(`.${draft}`)).length === 1, "不自动重试新建");
+    }
+    // Losing the reply to a worker restart must not take the box, the text or the advice with it.
+    const restartDraft = "重启未确认";
+    await act(async () => {
+      setter.call(failAdd, restartDraft);
+      failAdd!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => failAdd!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await wait();
+    const restartInput = () => document.querySelector<HTMLInputElement>(".plugin-tasks__add input");
+    check(restartInput()?.value === restartDraft && document.querySelector('.plugin-tasks__add [role="alert"]')?.textContent === t.actionUnconfirmed,
+      "插件重启时草稿和「先核对」提示都保留");
+    check(restartInput()?.disabled === true, "重启期间不能再提交");
+    await act(async () => setDidaStatus("running", false));
+    await wait();
+    check(restartInput()?.disabled === false && restartInput()?.value === restartDraft, "插件恢复后仍是同一份草稿");
+    await act(async () => {
+      setter.call(restartInput(), "");
+      restartInput()!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     // Titles past the shared 200-character cap are rejected before the action runs.
     await act(async () => {
       setter.call(failAdd, "测".repeat(201));

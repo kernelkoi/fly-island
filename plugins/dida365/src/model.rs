@@ -64,8 +64,12 @@ pub(crate) struct PluginState {
     /// Keys of the open rows in the last published snapshot. `last_open` also holds vanished rows
     /// still waiting for a reply, which must not come back to the page when an action republishes.
     pub(crate) published: HashSet<String>,
-    /// The last payload published, so a failed refresh still has something true to show.
-    pub(crate) last: Option<Value>,
+    /// Lists the last poll could not read. Their rows stay in memory here, but after a restart
+    /// there is no memory: the host carries what it last showed when these ids are published.
+    pub(crate) failed_lists: HashSet<String>,
+    /// The connected host advertised that it carries rows for `failed_lists` itself. Set from
+    /// the reserved settings key on every poll and action; older hosts never send it.
+    pub(crate) host_failed_lists: bool,
 }
 
 pub(crate) fn now_millis() -> i64 {

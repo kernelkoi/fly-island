@@ -106,8 +106,17 @@ pub(crate) fn snapshot_from_memory(state: &PluginState) -> Value {
         .collect();
     let mut sessions = build_sessions(&open, ROW_CAP);
     append_done(&mut sessions, &state.done);
-    if sessions.is_empty() {
-        return json!({ "composer": true });
+    let mut snapshot = if sessions.is_empty() {
+        json!({ "composer": true })
+    } else {
+        json!({ "sessions": sessions, "composer": true })
+    };
+    // Only a host that advertised support accepts this field; it keeps those lists' last shown
+    // rows when this process has none (after a restart). Sorted, so the payload is stable.
+    if state.host_failed_lists && !state.failed_lists.is_empty() {
+        let mut lists: Vec<&String> = state.failed_lists.iter().collect();
+        lists.sort();
+        snapshot["failedTaskLists"] = json!(lists);
     }
-    json!({ "sessions": sessions, "composer": true })
+    snapshot
 }

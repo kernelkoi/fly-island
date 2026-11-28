@@ -2,6 +2,7 @@
 // 400-line cap, and the data lives in one place instead of being rebuilt by each check.
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { LOCALE_STORAGE_KEY, TRANSLATIONS } from "../../src/i18n";
+import { refreshPlugins } from "../../src/features/plugins/usePlugins";
 
 Object.assign(globalThis, { isTauri: true });
 export const locale = new URLSearchParams(location.search).get("lang") === "en" ? "en" : "zh-CN";
@@ -26,6 +27,7 @@ const session = (id: string, title: string, detail: string | null, status: strin
 const live = {
   dida365: {
     status: "running",
+    stale: false,
     quota: [{ id: "tasks", label: "TickTick", remainingPercent: 60, secondaryPercent: null, balance: "3 条", resetsAt: null, updatedAt: 1 }],
     sessions: [
       // Finished rows carry a reopen action, not a complete one: their check undoes the completion.
@@ -57,10 +59,18 @@ const snapshot = {
   } },
   live,
 };
+/** Move the plugin through a supervisor restart, as the host would publish it. */
+export async function setDidaStatus(status: string, stale: boolean) {
+  live.dida365.status = status;
+  live.dida365.stale = stale;
+  await refreshPlugins();
+}
 export const ran: string[] = [];
 mockIPC((command, payload) => {
   const args = (payload ?? {}) as Record<string, unknown>;
-  if (command === "get_plugins") return snapshot;
+  // A fresh copy each read: the store compares reads, and a mutated shared object would hide
+  // the change from it.
+  if (command === "get_plugins") return JSON.parse(JSON.stringify(snapshot)) as typeof snapshot;
   if (command === "run_plugin_action") {
     const action = String(args.action ?? "");
     ran.push(`${args.id}/${action}`);
@@ -69,6 +79,13 @@ mockIPC((command, payload) => {
     if (action === "reopen.p2.done2") throw "TickTick reopen failed with status 404";
     if (action.startsWith("due.p1.today.")) throw "TickTick due date update failed with status 500";
     if (action.includes("失败")) throw "TickTick create failed with status 500";
+    if (action.endsWith(".未确认")) throw "plugin_action_unconfirmed";
+    if (action.endsWith(".排队过期")) throw "plugin_action_expired";
+    // The write lost its reply because the worker was restarting at that moment.
+    if (action.endsWith(".重启未确认")) {
+      void setDidaStatus("restarting", true);
+      throw "plugin_action_unconfirmed";
+    }
     return true;
   }
   return null;

@@ -20,7 +20,11 @@ const HOST_FAILURES = new Set([
   "Invalid plugin setting value", "Unknown plugin setting", "Invalid secret",
 ]);
 
-export function pluginFailureDetail(error: unknown): string | undefined {
+type ActionFailureText = { actionExpired: string; actionUnconfirmed: string };
+
+export function pluginFailureDetail(error: unknown, actionText?: ActionFailureText): string | undefined {
   const message = error instanceof Error ? error.message.trim() : typeof error === "string" ? error.trim() : "";
+  if (message === "plugin_action_expired") return actionText?.actionExpired;
+  if (message === "plugin_action_unconfirmed") return actionText?.actionUnconfirmed;
   return message && !HOST_FAILURES.has(message) ? message : undefined;
 }

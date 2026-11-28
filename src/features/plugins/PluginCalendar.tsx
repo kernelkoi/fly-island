@@ -7,19 +7,22 @@ import { TodoDayDetail } from "../todos/TodoDayDetail";
 import { TodoDayRow } from "../todos/TodoDayRow";
 import { PluginQuickAdd } from "./PluginQuickAdd";
 import { runPluginAction, type PluginSession } from "./api";
+import { pluginFailureDetail } from "./errors";
 import "../todos/TodoNotebook.css";
 import "../todos/TodoCalendar.css";
 
 type CalendarItem = CalendarTodo & { session: PluginSession };
 
 /** The month beside the chosen day's tasks, using the todo page's own calendar parts. */
-export function PluginCalendar({ pluginId, sessions, composer = false, listId = null }: {
+export function PluginCalendar({ pluginId, sessions, composer = false, listId = null, available = true }: {
   pluginId: string;
   sessions: PluginSession[];
   /** Whether the plugin accepts `create.<day>.<title>` actions for new tasks. */
   composer?: boolean;
   /** The filtered list's id, so quick add lands in the list the user is looking at. */
   listId?: string | null;
+  /** False while the worker is restarting: the box stays, but sends nothing until it is back. */
+  available?: boolean;
 }) {
   const t = useTranslation();
   const today = getLocalDateString();
@@ -144,6 +147,7 @@ export function PluginCalendar({ pluginId, sessions, composer = false, listId = 
             listId={listId}
             placeholder={t.plugins.addTaskFor(dayHeading(selected, today, t.notebook))}
             className="plugin-quick-add--calendar"
+            disabled={!available}
           />
         ) : undefined}
       >
@@ -164,7 +168,7 @@ export function PluginCalendar({ pluginId, sessions, composer = false, listId = 
                   // Like the todo rows: success republishes and the row changes side; failure stays
                   // where it is and says why.
                   void runPluginAction(pluginId, action)
-                    .catch((actionError) => setError(String(actionError)))
+                    .catch((actionError) => setError(pluginFailureDetail(actionError, t.plugins) ?? String(actionError)))
                     .finally(() => setPendingAction(null));
                 },
               } : undefined}
