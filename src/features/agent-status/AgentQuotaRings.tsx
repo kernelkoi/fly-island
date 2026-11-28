@@ -4,6 +4,7 @@ import { isStale, percentLeft, quotaRings, usageLineCount, windowLabel, windowSu
 import { useAgentUsages } from "./useAgentUsages";
 import { DshProblemNote, DshQuotaRing } from "./DshQuotaRing";
 import { QuotaRings } from "./QuotaRings";
+import { RelayQuotaRings } from "./RelayQuotaRing";
 import { WorkbuddyQuotaRing } from "./WorkbuddyQuotaRing";
 import { AGENT_PROVIDER_LABELS } from "./status";
 import "./AgentQuotaRings.css";
@@ -26,6 +27,7 @@ export function AgentQuotaRings({ usages: given }: { usages?: AgentUsages }) {
       {shown.map(([provider, usage]) => <AgentQuota key={provider} provider={provider} usage={usage} now={usages.readAt} />)}
       {usages.dsh ? <DshQuotaRing usage={usages.dsh} now={usages.readAt} /> : usages.dshProblem && <DshProblemNote problem={usages.dshProblem} />}
       {usages.workbuddy && <WorkbuddyQuotaRing usage={usages.workbuddy} now={Math.max(usages.readAt, usages.workbuddy.updatedAt)} />}
+      {usages.relay && <RelayQuotaRings usage={usages.relay} now={usages.readAt} />}
       <PluginQuotaRings items={usages.plugins ?? []} />
     </div>
   );
@@ -47,7 +49,7 @@ function AgentQuota({ provider, usage, now }: { provider: AgentProvider; usage: 
         inner={rings.inner ? percentLeft(rings.inner) : null}
         stale={stale}
         label={text.rings(label, ringWindows)}
-        hints={[hint(rings.outer, provider === "antigravity" ? text.modelQuota : text.fiveHour), hint(rings.inner, provider === "antigravity" ? text.modelQuota : text.weekly)]}
+        hints={[hint(rings.outer, text.fiveHour), hint(rings.inner, text.weekly)]}
       />
   );
 }
@@ -59,7 +61,7 @@ export function QuotaRingPair({
   provider,
   outer,
   inner,
-  size = 22,
+  size = 24,
   stale = false,
   label,
   hints,

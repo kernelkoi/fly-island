@@ -1,4 +1,4 @@
-import type { AgentUsage, DshProblem, DshUsage, UsageWindow, WorkbuddyUsage } from "./api";
+import type { AgentUsage, DshProblem, DshUsage, RelayUsage, UsageWindow, WorkbuddyUsage } from "./api";
 import type { AgentQuotaSource } from "../appearance/types";
 import type { HoverCardLine } from "../../components/IslandHoverCard";
 import type { PluginQuota } from "../plugins";
@@ -74,6 +74,8 @@ export type AgentUsages = {
   kimi?: AgentUsage | null;
   zcode?: AgentUsage | null;
   antigravity?: AgentUsage | null;
+  /** Third-party relay balances, one ring per configured account. */
+  relay?: RelayUsage | null;
   readAt: number;
 };
 
@@ -90,6 +92,7 @@ export function filterQuotaUsages(usages: AgentUsages, sources: readonly AgentQu
     kimi: sources.includes("kimiCode") ? usages.kimi : null,
     zcode: sources.includes("zcode") ? usages.zcode : null,
     antigravity: sources.includes("antigravity") ? usages.antigravity : null,
+    relay: sources.includes("relay") ? usages.relay : null,
     readAt: usages.readAt,
     plugins: usages.plugins,
   };
@@ -103,15 +106,15 @@ export function hasUsageNumbers(usage: AgentUsage | null): boolean {
 /**
  * The windows an agent's quota arcs show: 5-hour above, weekly below. A plan
  * with neither but one long window (Codex Free's 30 days, listed by its length as "30d") shows
- * that one below. Antigravity has model windows instead and shows the two tightest;
+ * that one below. Antigravity uses explicitly named 5-hour/weekly windows;
  * Z Code's trial quota stands in for the lower arc.
  * Null: no rings.
  */
 export function quotaRings(usage: AgentUsage | null): { outer: UsageWindow | null; inner: UsageWindow | null } | null {
   if (!usage) return null;
-  // Model quotas have no 5-hour/weekly split. Keep the installed source present even before
-  // its first successful read, and use the actual model names in its two hover targets.
-  if (usage.source === "antigravity") return { outer: usage.models[0] ?? null, inner: usage.models[1] ?? null };
+  // Old model-only snapshots cannot stand in for time windows. Keep the installed source
+  // present even before its first successful dual-window read.
+  if (usage.source === "antigravity") return { outer: usage.fiveHour, inner: usage.sevenDay };
   const outer = usage.fiveHour;
   const named = usage.source === "zcode";
   const fallback = named ? usage.models[0] : undefined;
@@ -121,7 +124,7 @@ export function quotaRings(usage: AgentUsage | null): { outer: UsageWindow | nul
 
 /** The Agent page reserves one row when at least one selected source has data. */
 export function usageLineCount(usages: AgentUsages): number {
-  return quotaRings(usages.claude) || quotaRings(usages.codex) || quotaRings(usages.kimi ?? null) || quotaRings(usages.zcode ?? null) || quotaRings(usages.antigravity ?? null) || usages.dsh?.wallets.length || usages.dshProblem || usages.workbuddy || usages.plugins?.length ? 1 : 0;
+  return quotaRings(usages.claude) || quotaRings(usages.codex) || quotaRings(usages.kimi ?? null) || quotaRings(usages.zcode ?? null) || quotaRings(usages.antigravity ?? null) || usages.dsh?.wallets.length || usages.dshProblem || usages.workbuddy || usages.relay?.accounts.length || usages.plugins?.length ? 1 : 0;
 }
 
 type UsageText = Translations["agent"]["usage"];

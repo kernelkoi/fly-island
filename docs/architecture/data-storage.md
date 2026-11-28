@@ -1,5 +1,13 @@
 # 数据存放位置
 
+## 新用户默认偏好（2026-11-27）
+
+`features/onboarding/` 保存本机确认的偏好快照；`appearance/settingsDefaults.ts` 的 `FIRST_LAUNCH_SETTINGS` 保存岛屿配置。仅在配置恢复、更名迁移完成后且 WebView 中没有任何 `fly-island-` 或尚未迁移成功的旧应用键时写入。已有任意应用键（包括损坏的设置、只有语言或待办的旧配置）即跳过，不补写旧配置的缺失字段；`DEFAULT_SETTINGS` 与 normalize 回退保持原样。
+
+新增 `fly-island-first-launch-defaults-v1`：`pending` 表示前端偏好已种入、等待主窗口，`complete` 表示已由主窗口领取原生初始化。所有窗口在读取设置前通过共享 Web Lock 串行初始化，防止常驻翻译窗口先写迁移标记误判；主窗口保留首次启动欢迎内容，并通过现有命令设置剪贴板（75 项、Alt+C、捕获图片开启）及日志（开启）。领取先于异步命令，避免下次启动重复覆盖用户选择；原生命令失败记录错误，不反复重置。标记不参与配置导出与恢复。
+
+快照包含外观、交互、模块开关、快捷键、Agent 审批与声音、内置插件安装/禁用状态、时间天气偏好（隐藏时钟，不含城市位置）、中文界面；微信“显示消息内容”固定关闭。待办、邮箱账号、凭据、历史、缓存、窗口坐标、文件路径与开发用插件索引不进入默认值；没有修改本机现存配置。老版本的兼容回退与重置动作继续使用原默认值。
+
 ## 更名迁移
 
 新安装使用 `%APPDATA%/com.flyisland.app` 与 `%LOCALAPPDATA%/com.flyisland.app`。启动时在创建 Tauri 窗口前，`legacy_migration` 对迁移前目录及可选 `.custom` 目录执行幂等的同卷改名（文件被刚退出的旧版本 WebView 占用时退避重试约 6 秒），仍失败则递归复制，复制完整后删除旧目录；不覆盖已存在的新目录。改名和复制都失败时弹窗说明并**直接退出**，不让 Tauri 建出空的新目录（否则旧数据再也不会被迁移），下一次启动重试。WebView localStorage 由前端入口第一个 import（`src/shared/storage/runLegacyMigration.ts`）同步把旧前缀键复制到 `fly-island-`，保证任何模块读取存储之前完成，新键优先，成功后删除旧键。凭据、自启值和回复标记文件也由同一迁移模块一次性转存并清理。Codex / Claude Code 配置里迁移前写入的 Hook 指向已搬走的脚本，setup 阶段 `agent_status/hook_migration.rs` 检测到旧签名时，对相应的那一家用设置页同一套安装函数重写一次（只替换岛屿自己的条目）。
@@ -77,6 +85,8 @@ DSH（issue #51）：`agent_status/dsh_sessions.rs` 只读 `%APPDATA%/dsh-deskto
 
 WebView2 localStorage 的 `fly-island-native-plugins` 记录安装的内置插件 id，`fly-island-native-plugins-disabled` 记录已安装但手动关闭的 id。旧配置缺少关闭清单时，已安装的插件均启用。关闭仅暂停功能，保留插件的设置；卸载清除对应的关闭标记，重装时默认启用。
 
+截图使用上述清单的 `screenshot` id，默认未安装。`fly-island-screenshot-settings` 保存快捷键（默认 Alt+A）、快捷键开关、放大镜、窗口自动框选和操作提示，缺失和损坏字段回退安全默认值；关闭或卸载不删除偏好。不新增原生配置文件或密钥，主窗口按偏好同步原生运行状态，截图和识别资源仅在使用时创建。热键注册失败时在同一记录保存 `shortcutIssue: { shortcut, reason }`，修复成功清除；停用时仅为修复保留设置入口。长截图与录屏暂不保存可启用配置。
+
 ## 插件 API v1
 
 原生应用数据目录下 `plugins-state.json` 保存安装清单、启用状态、非秘密插件 settings、开发模式与索引 URL；临时原子写文件 `plugins-state.json.tmp`。这是需要在前端启动前恢复进程的安装注册表，不扩展或迁移现有 fly-island-settings。秘密存 Windows 凭据管理器 service `com.flyisland.app.plugins`，account `<id>/<setting-key>`，只经 stdin 发给对应插件，不返回前端。
@@ -110,3 +120,15 @@ Rust `weather/` 只按显式城市搜索或已保存坐标请求 Open-Meteo；�
 ## 插件市场作者头像缓存（2026-11-26）
 
 插件市场作者头像从 GitHub 头像 CDN 加载，每个 URL 的并发请求合并，解码后保存为当前 WebView 内存中的 blob URL；离开、重新进入市场时直接复用。初次请求使用 HTTP 缓存且不发送凭据或 referrer，失败显示姓名首字母，下次进入可重试。不新增 localStorage key。
+
+Antigravity 额度缓存升级为版本 2，在原字段外增加 `fiveHour`、`sevenDay`（窗口对象或 null）。兼容读取版本 1 的模型数据，但不将它们转换成 5 小时／每周；成功查询后原子写入版本 2，损坏或过期缓存仍忽略。
+
+## 居中时钟、中转站与 Apple Music 歌词
+
+居中时钟偏好保存在 `fly-island-centered-clock`，默认 24 小时制、不显示秒和日期；卸载保留。折叠内容优先级 `collapsedPriority` 缺少 `centeredClock` 时在末尾补齐。
+
+中转站账号整体保存在 Windows 凭据管理器 service `com.flyisland.app.relay-accounts`。索引 `index` 为 `{ chunks, generation }`；新分片命名 `chunk-<generation>-<n>`，成功切换索引后删除旧代。兼容没有 generation 的 `chunk-<n>`。账号不写入 localStorage 或日志，IPC 只返回配置和遮罩，保留非秘密 `userId`；余额仅在内存缓存。
+
+Apple Music 媒体令牌保存在凭据 service `com.flyisland.app.apple-music-lyrics`、account `media-user-token`。`lyricsAppleMusic` 布尔开关沿用 `fly-island-settings`，缺失默认 false。歌词仍缓存于 `lyrics-cache/`，使用令牌 SHA-256 区分账号；不保存原始令牌到文件。
+
+增强 OCR 资源仅在显式下载后写入 `app_data_dir()/screenshot-ocr/ppocr-v4-ort-1.22/`，固定模型、字典、DLL 和许可证；`.download` 是未完成的暂存目录，完整校验后一次改名生效。卸载插件保留下载，模型不进入安装包，识别图片不上传。截图贴图临时 PNG 沿用 `app_data_dir()/pinned-images/`，关闭窗口清理。

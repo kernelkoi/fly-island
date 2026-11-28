@@ -10,10 +10,10 @@ const usage = (fields) => ({ updatedAt: 1, fiveHour: null, sevenDay: null, model
 
 test("plugin-market agents default on and keep a switch of their own", () => {
   const settings = normalizeSettings(null);
-  assert.deepEqual([settings.agentShowCursor, settings.agentShowKimiCode, settings.agentShowCodeBuddy, settings.agentShowHermes, settings.agentShowZcode, settings.agentShowAntigravity], [true, true, true, true, true, true]);
+  assert.deepEqual([settings.agentShowCursor, settings.agentShowKimiCode, settings.agentShowCodeBuddy, settings.agentShowHermes, settings.agentShowZcode, settings.agentShowAntigravity, settings.agentShowRelay], [true, true, true, true, true, true, true]);
   assert.equal(normalizeSettings({ agentShowCursor: false }).agentShowCursor, false);
   assert.equal(normalizeSettings({ agentShowHermes: "broken" }).agentShowHermes, true);
-  assert.deepEqual(normalizeSettings({}).agentQuotaSources, ["claudeCode", "codex", "dsh", "workbuddy", "kimiCode", "zcode", "antigravity"],
+  assert.deepEqual(normalizeSettings({}).agentQuotaSources, ["claudeCode", "codex", "dsh", "workbuddy", "kimiCode", "zcode", "antigravity", "relay"],
     "new users have every ring ticked, the plugin-market ones included");
 });
 
@@ -56,7 +56,9 @@ test("Z Code shows trial quota and Antigravity shows actual model windows, inclu
   const trial = usage({ source: "zcode", models: [window(25, "Trial")] });
   assert.deepEqual(quotaRings(trial), { outer: null, inner: trial.models[0] });
   const antigravity = usage({ source: "antigravity", models: [window(70, "Claude Sonnet 4.5"), window(5, "Gemini 4 Neon")] });
-  assert.deepEqual(quotaRings(antigravity), { outer: antigravity.models[0], inner: antigravity.models[1] });
+  assert.deepEqual(quotaRings(antigravity), { outer: null, inner: null }, "model balances must not be mislabeled as time windows");
+  const timed = { ...antigravity, fiveHour: window(25), sevenDay: window(70) };
+  assert.deepEqual(quotaRings(timed), { outer: timed.fiveHour, inner: timed.sevenDay });
   const unknown = usage({ source: "antigravity" });
   assert.deepEqual(quotaRings(unknown), { outer: null, inner: null });
   assert.equal(usageLineCount({ claude: null, codex: null, antigravity: unknown, readAt: 1 }), 1);

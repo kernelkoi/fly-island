@@ -13,7 +13,7 @@ src-tauri/src/
 ├── agent_approval/          # 在岛上审批（B6 第 2 期）：127.0.0.1 上的审批端点（标准库 TcpListener，挂起时能发现 Agent 断开）、按会话排队、等待上限、agent-approval.json
 ├── agent_status/            # AI 代理状态：快照、运行标记、Codex / Claude Code hook 安装；hooks/ 为编入二进制的 hook 脚本；sound_packs.rs 为导入的音效包（应用数据目录的 sound-packs/）
 │                            #   sqlite_read.rs 只读打开 Cursor / Hermes 的库；sqlite_snapshot.rs 把持续写入的 WAL 库（Antigravity）复制到临时目录后读副本，按文件时间增量
-│                            #   antigravity_quota.rs 查询本机语言服务器；antigravity_quota_cache.rs 保存最后成功的额度快照，不保存凭据
+│                            #   antigravity_quota.rs 查询本机语言服务器，antigravity_quota_windows.rs 解析真实双窗口；antigravity_quota_cache.rs 保存最后成功的额度快照，不保存凭据
 │                            #   codex_activity.rs：增量保存 rollout 的 turn 边界，fixtures/ 为脱敏的真实记录
 │                            #   hook_migration.rs：启动时把改名前写入 Codex / Claude Code 配置的 Hook 重写到新脚本
 │                            #   reply_marker.rs：可选的回复状态标记（B9），增删 CLAUDE.md 里岛屿自己的那段说明、识别回复末行的标记
@@ -35,6 +35,7 @@ src-tauri/src/
 ├── wechat_reminders/        # source.rs 统一微信进程解析、窗口选择和任务栏提醒（被示例复用）；可选的 UI Automation 摘要与 Qt 标志恢复
 ├── weather/                 # 时间与天气：Open-Meteo 城市搜索与当前天气异步命令，不自动定位、不写原生数据文件
 ├── translation/             # 快捷翻译：窗口、全局快捷键、凭据与翻译请求（mod.rs）
+├── screenshot/              # runtime.rs：可选插件门控与扩展能力；全分辨率抓屏、空闲 OCR 缓存、保存、快捷键、按需覆盖层与贴图/翻译窗口生命周期
 ├── settings_window/         # 设置窗口：按需创建与显示（mod.rs）；sizing.rs 按屏幕缩放窗口尺寸，剪贴板窗口共用
 ├── clipboard_window/        # 剪贴板历史独立窗口：按需创建、显示、关闭与位置记忆
 ├── legacy_migration/        # 改名前安装的一次性迁移（数据目录、自启、凭据、日志名、Hook 文本），在 tauri::Builder 前运行；唯一允许出现旧产品名的 Rust 模块

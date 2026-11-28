@@ -18,6 +18,7 @@ import * as fileShelf from "../sections/fileShelf.ts";
 import * as eyeCare from "../sections/eyeCare.ts";
 import * as pluginPanel from "../sections/pluginPanel.ts";
 import * as plugins from "../sections/plugins.ts";
+import * as screenshot from "../sections/screenshot.ts";
 import * as settings from "../sections/settings/index.ts";
 
 const zhCN: Translations = {
@@ -55,6 +56,8 @@ const zhCN: Translations = {
   eyeCare: eyeCare.zhCN,
   deviceBattery,
   plugins: plugins.zhCN,
+
+  screenshot: screenshot.zhCN,
 
   settings: settings.zhCN,
 };

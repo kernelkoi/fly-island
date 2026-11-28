@@ -2,6 +2,16 @@
 
 /** Each page with the query that starts its automated checks. */
 export const PAGES = [
+  "screenshot-plugin.html",
+  "screenshot-plugin.html?lang=en&theme=light",
+  "screenshot-ocr.html",
+  "screenshot-polish.html",
+  "screenshot-scaling.html",
+  "screenshot-session.html",
+  "screenshot-shapes.html",
+  "screenshot-text.html",
+  "screenshot-translation.html",
+  "island-tour.html?test=1&centeredClock=1&features=enabled",
   "island-tour.html?test=1&battery=normal&batteryAuto=1",
   "island-tour.html?test=1&battery=normal&batterySamples=1",
   "island-tour.html?test=1&battery=normal&batteryDisplay=remaining&notch=1&font=120&lang=en&theme=light",
@@ -15,6 +25,7 @@ export const PAGES = [
   "battery-readout.html?forcedColors=1",
   "config-transfer.html",
   "config-transfer.html?lang=en",
+  "first-launch-defaults.html",
   "diagnostic-bundle.html",
   "diagnostic-bundle.html?lang=en",
   "agent-alert-card.html",

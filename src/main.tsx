@@ -15,20 +15,43 @@ import { installSameWindowStorageEvents } from "./lib/sameWindowStorageEvents";
 import { shouldPreventContextMenu } from "./lib/contextMenu";
 import { applyDocumentTheme } from "./features/appearance/useDocumentTheme";
 import { loadSettings } from "./features/appearance/storage";
-import { captureFirstLaunch } from "./features/onboarding/firstLaunch";
+import { initializeFirstLaunchDefaults } from "./windows/island/initializeDefaults";
 import { installAppLogCapture } from "./features/diagnostics/appLogCapture";
 import { logStartupSettings } from "./features/diagnostics/islandSettings";
 import { restoreConfigBeforeMount } from "./features/config-transfer/bootstrap";
 import { PluginFocusProvider } from "./features/plugins/PluginFocusContext";
 
 const windowKind = new URLSearchParams(window.location.search).get("window");
+const ScreenshotWindow = React.lazy(() => import("./windows/screenshot/ScreenshotWindow").then((module) => ({ default: module.ScreenshotWindow })));
+const ScreenshotOcrWindow = React.lazy(() => import("./windows/screenshot-ocr/ScreenshotOcrWindow").then((module) => ({ default: module.ScreenshotOcrWindow })));
+const ScreenshotTranslationWindow = React.lazy(() => import("./windows/screenshot-translation/ScreenshotTranslationWindow").then((module) => ({ default: module.ScreenshotTranslationWindow })));
+const PinnedImageWindow = React.lazy(() => import("./windows/pinned-image/PinnedImageWindow").then((module) => ({ default: module.PinnedImageWindow })));
 // First, so errors while the window starts are in the diagnostic log when it is on.
 installAppLogCapture();
 
+/** 兜底：截图窗口渲染出错时显示错误信息，而不是整页白屏。 */
+class ScreenshotErrorBoundary extends React.Component<{ children: React.ReactNode }, { message: string | null }> {
+  state = { message: null as string | null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { message: String(error) };
+  }
+
+  render() {
+    if (this.state.message) {
+      return (
+        <div style={{ padding: 16, color: "#b42318", font: "13px system-ui, sans-serif", background: "#fff1f0" }}>
+          ScreenshotWindow failed: {this.state.message}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 async function mountApp() {
   await restoreConfigBeforeMount();
-  // Before loading the settings, which may save them on a first launch.
-  captureFirstLaunch();
+  await initializeFirstLaunchDefaults(windowKind === null);
   // Before the first paint, so no window shows a frame in the wrong colour scheme.
   const settings = loadSettings();
   applyDocumentTheme(settings);
@@ -66,7 +89,7 @@ async function mountApp() {
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <I18nProvider>
+      <I18nProvider><React.Suspense fallback={null}>
         {windowKind === "eye-care" ? (
           <EyeCareWindow />
         ) : windowKind === "translation" ? (
@@ -75,12 +98,22 @@ async function mountApp() {
           <SettingsWindow />
         ) : windowKind === "clipboard" ? (
           <ClipboardWindow />
+        ) : windowKind === "screenshot-ocr" ? (
+          <ScreenshotOcrWindow />
+        ) : windowKind === "screenshot-translation" ? (
+          <ScreenshotTranslationWindow />
+        ) : windowKind === "pinned-image" ? (
+          <PinnedImageWindow />
+        ) : windowKind === "screenshot" ? (
+          <ScreenshotErrorBoundary>
+            <ScreenshotWindow />
+          </ScreenshotErrorBoundary>
         ) : (
           <PluginFocusProvider>
             <IslandApp />
           </PluginFocusProvider>
         )}
-      </I18nProvider>
+      </React.Suspense></I18nProvider>
     </React.StrictMode>,
   );
 }

@@ -18,6 +18,7 @@ import type { EyeCareText } from "./sections/eyeCare";
 import type { PluginPanelText } from "./sections/pluginPanel";
 import type { PluginPageText } from "./sections/plugins";
 import type { SettingsText } from "./sections/settings/index";
+import type { ScreenshotText } from "./sections/screenshot";
 
 export type LocaleCode = "zh-CN" | "en";
 
@@ -58,6 +59,9 @@ export type Translations = {
   deviceBattery: DeviceBatteryText;
 
   plugins: PluginPageText;
+
+  /** 截图覆盖层：工具、属性面板与出错提示。 */
+  screenshot: ScreenshotText;
 
   settings: SettingsText;
 };

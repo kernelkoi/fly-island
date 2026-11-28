@@ -69,7 +69,7 @@
 | 前端静态检查 | `pnpm lint`（ESLint，配置见 `eslint.config.js`） |
 | 文件行数检查 | `pnpm check:size` |
 | 回归页类型检查 | `pnpm check:tests-types`（`tsconfig.tests.json`，检查 `tests/regression/*.tsx`） |
-| 浏览器回归页 | `pnpm test:regression [页面名中的词]`（自带 Vite，用无头 Chrome / Edge 跑 `tests/regression/` 下全部回归页并汇总结果，约 20 秒） |
+| 浏览器回归页 | `pnpm test:regression [页面名中的词]`（自带 Vite，用无头 Chrome / Edge 跑 `tests/regression/` 下全部回归页并汇总结果。按每 4 个逻辑核心 1 路并行（最多 6 路），32 核机器上全量约 3 分 20 秒；`--workers=N` 或 `REGRESSION_WORKERS` 可改，并行时失败的页面会单独重跑一次并在结尾列出。带页面名过滤时几十秒内完成） |
 | 提交前总检查 | `pnpm check`（类型检查 + 回归页类型检查 + lint + 行数检查 + 单元测试） |
 | Rust 单元测试 | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | 仅生成 release 可执行文件 | `pnpm tauri build --no-bundle`（写到 `src-tauri/target/release`） |
@@ -140,6 +140,7 @@
 | 发布相关 | 完整的 `pnpm tauri build` |
 
 - 改动岛屿、消息、设置窗口等界面组件或它们的 `api.ts` 类型时，再运行 `pnpm test:regression`；回归页的 mock 落后于代码时页面会失败，要同步更新。其余界面或窗口行为在风险需要时用 `pnpm tauri dev` 手动检查。
+- 跑回归一律用并行：直接运行 `pnpm test:regression`（默认按 CPU 核数决定并行路数），不要用 `--workers=1` 或 `REGRESSION_WORKERS=1` 改成串行。性能页 `shapePerf` 和 4 核 CI 由运行器自动串行，不用手动处理。结尾列出的“单独重跑后才通过”的页面要在结果中如实说明。
 - 不得因为构建耗时而跳过必要验证。必要构建失败或受环境阻塞时，必须明确报告原因，不得把未完成的验证描述为已验证。
 
 ## Git 与协作

@@ -11,6 +11,10 @@ src/
 │   ├── island/              # 主窗口：IslandApp（只做组装）、IslandShell、展开后的页面面板（IslandPages）、按职责的接线 hook（useIslandNotices / Todos / Tucking / Shelf / Hover、useAgentIndicator；新功能的接线加在这里，不加进 IslandApp）、窗口尺寸/拖拽/贴边 hook、自动化 hook
 │   ├── settings/            # 设置窗口
 │   ├── clipboard/           # 剪贴板历史独立窗口：自绘标题栏（拖动、图钉置顶、关闭），内容复用 features/clipboard 的面板
+│   ├── screenshot/          # 按需加载的截图覆盖层、标注交互、保存弹窗及自适应文字行
+│   ├── screenshot-ocr/      # 独立识别结果：原图对照、顺序文字、逐行编辑与纯文本复制
+│   ├── pinned-image/        # 桌面贴图、OCR 文本层与原生菜单动作
+│   ├── screenshot-translation/ # 原图与逐段原文/译文对照、布局切换
 │   └── translation/         # 快捷翻译窗口
 ├── features/                # 业务领域，每个领域自包含
 │   ├── todos/               # 待办、每日笔记、归档、Markdown 导出及可选反向同步
@@ -24,7 +28,9 @@ src/
 │   ├── plugins/             # 插件宿主的前端：插件快照与动作调用（api.ts / usePlugins.ts）、PluginIcon（宿主内置的品牌标识）、设置 → 插件页、岛上的插件页（PluginTasksPanel / PluginCalendar：待办与日历视图，复用 todos 的行、视图开关和月历；额度环复用 agent-status/PluginQuotaRings）
 │   ├── appearance/          # 外观设置、布局编辑器、预设；岛屿设置（fly-island-settings）的范围在 settingsLimits.ts、首次启动值在 settingsDefaults.ts、读取按领域在 normalizeLayout / Agent / BehaviorSettings.ts，新设置加在这几个文件里，settings.ts 只做入口
 │   ├── translation/         # 快捷翻译：服务与模型设置、凭据、快捷键的类型化封装，请求与自动翻译 hook，岛内翻译页
+│   ├── screenshot/          # 截图 IPC、独立插件偏好、能力查询、标注算法、显示器坐标换算与翻译请求队列
 │   ├── weather/             # 时间与天气内置插件：城市设置/缓存、Open-Meteo IPC、WMO映射、叶子时间与天气、共享低频刷新
+│   ├── centered-clock/      # 居中时钟内置插件：本地格式化、独立偏好、设置控件和叶子显示
 │   └── updater/             # 自动更新
 ├── components/              # 与领域无关的通用 UI（countdown/ 绝对截止时间的叶子倒计时，controls/ 开关、数字输入、下拉等控件，插件页和岛上还在用；settings/ 设置窗口的分组列表：组、行、开关行、滑块行、数字行、颜色、输入框、分段选择、下拉、文字链接，设置页都用它；markdown/ 把外部 Markdown 渲染成元素，不插入 HTML）
 ├── lib/                     # 有副作用的通用基础设施，例如 localStorage 安全读写
@@ -36,6 +42,8 @@ src/
 ```
 
 外观颜色模块位于 `features/appearance/`：`HexColorInput` / `hexColor.ts`（色值编辑）、`colorPalette.ts`（三色校验）、`colorRefresh.ts`（一次性刷新）、`colorPresets.ts` / `ColorPresetRow`（颜色预设逻辑与界面）；新颜色 key 的安全读写集中在同目录 `storage.ts`。
+
+新用户默认偏好由 `features/onboarding/defaults.ts` 和 `storage.ts` 保存及一次性写入；`windows/island/initializeDefaults.ts` 在配置恢复后、任何窗口读取设置前协调初始化（共享 Web Lock），原生设置只由主窗口应用。`appearance/settingsDefaults.ts` 的 `FIRST_LAUNCH_SETTINGS` 经 `appearance/index.ts` 公开；`DEFAULT_SETTINGS` 继续作为老配置缺字段与重置操作的兼容回退，不得随新用户默认值一起改动。
 
 单个 feature 目录的标准组成（按需创建，不需要的文件不建）：
 
