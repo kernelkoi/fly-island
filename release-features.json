@@ -1,5 +1,5 @@
 {
-  "plugins": false,
+  "plugins": true,
   "mailOtp": false,
   "pluginMarket": true
 }
