@@ -1,6 +1,6 @@
 // Line icons for the sidebar entries of plugins with a page of their own, and the tile of a development
 // plugin outside the catalog. Market cards and group titles use the full-colour app icons instead.
-import { Activity, BatteryMedium, CloudSun, Clock3, ScanLine, Eye, Gauge, HeartPulse, ListTodo, Puzzle, Timer, type LucideIcon } from "lucide-react";
+import { Activity, BatteryMedium, CircleCheck, CloudSun, Clock3, ScanLine, Eye, Gauge, HeartPulse, Puzzle, Timer, type LucideIcon } from "lucide-react";
 import type { PluginPanelIcon } from "./panelTypes";
 
 const PLUGIN_LINE_ICONS: Readonly<Record<string, LucideIcon>> = {
@@ -10,7 +10,7 @@ const PLUGIN_LINE_ICONS: Readonly<Record<string, LucideIcon>> = {
   battery: BatteryMedium,
   "eye-care": Eye,
   "device-battery": BatteryMedium,
-  dida365: ListTodo,
+  dida365: CircleCheck,
 };
 
 const PANEL_ICONS: Record<PluginPanelIcon, LucideIcon> = {
