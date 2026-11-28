@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { movePickerFocus, pickerMonthGrid, pickerWeekStart, quickAddDateChoice, shiftPickerMonth, taskDueDateChoice } from "../../src/features/todos/datePickerCalendar.ts";
+import { movePickerFocus, pickerMonthGrid, pickerPopoverPlacement, pickerWeekStart, quickAddDateChoice, shiftPickerMonth, taskDueDateChoice } from "../../src/features/todos/datePickerCalendar.ts";
 import { holdIslandPicker, isIslandPickerOpen } from "../../src/lib/islandPicker.ts";
 
 test("picker weeks follow the UI locale and span complete weeks across month boundaries", () => {
@@ -44,6 +44,21 @@ test("a new todo keeps earlier days on its list, while editing a task keeps the 
   assert.equal(quickAddDateChoice("2026-11-16", "2026-11-15"), "2026-11-16");
   assert.equal(taskDueDateChoice("2026-11-10", "2026-11-15"), "2026-11-10");
   assert.equal(taskDueDateChoice(null, "2026-11-15"), null);
+});
+
+test("a fixed picker opens below its row, flips above near the bottom, and stays inside the island", () => {
+  const popover = { width: 248, height: 273 };
+  const bounds = { top: 0, bottom: 420, left: 0, right: 560 };
+  // Room below the row: directly under it, right-aligned to the row.
+  assert.deepEqual(pickerPopoverPlacement({ top: 100, bottom: 124, right: 300 }, popover, bounds), { top: 128, left: 52 });
+  // Near the bottom: above the row instead of running off the island.
+  assert.deepEqual(pickerPopoverPlacement({ top: 360, bottom: 384, right: 540 }, popover, bounds), { top: 83, left: 292 });
+  // Neither side fits: clamped into the island rather than hidden past its edge.
+  assert.deepEqual(pickerPopoverPlacement({ top: 150, bottom: 174, right: 200 }, popover, bounds), { top: 143, left: 4 });
+  // An island narrower than the month: aligned to its edge instead of overflowing to the right.
+  assert.deepEqual(pickerPopoverPlacement({ top: 100, bottom: 124, right: 810 }, popover, { top: 0, bottom: 420, left: 295, right: 805 }), { top: 128, left: 553 });
+  // The island's rounded bottom stays clear (bounds.bottom already excludes it), so a low row flips up.
+  assert.deepEqual(pickerPopoverPlacement({ top: 330, bottom: 354, right: 787 }, popover, { top: 0, bottom: 344, left: 295, right: 805 }), { top: 53, left: 539 });
 });
 
 test("picker close/focus suppression remains held until every open owner releases it", () => {

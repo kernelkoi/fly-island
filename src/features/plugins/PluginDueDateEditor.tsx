@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from "react";
+import { useEffect, useState } from "react";
 import { getLocalDateString } from "../../utils/date";
 import { useLocale, useTranslation } from "../../i18n";
 import { TodoDatePicker } from "../todos/TodoDatePicker";
@@ -55,32 +55,20 @@ export function PluginDueDateEditor({ pluginId, session, onPendingChange, onErro
       onPendingChange(false);
     }
   };
-  // Fixed positioning keeps the month out of the scrolling list, like the row's other pickers.
-  const positionPicker = (event: SyntheticEvent<HTMLSpanElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const root = event.currentTarget.closest(".plugin-due-date");
-    if (!(root instanceof HTMLElement)) return;
-    root.style.setProperty("--plugin-picker-top", `${Math.round(rect.bottom + 4)}px`);
-    root.style.setProperty("--plugin-picker-right", `${Math.round(window.innerWidth - rect.right)}px`);
-  };
   if (!prefix) return null;
   return (
     <span className="plugin-due-date">
-      <span
-        className="plugin-due-date__position"
-        onPointerEnter={positionPicker}
-        onFocus={positionPicker}
-      >
-        <TodoDatePicker
-          value={selected}
-          today={getLocalDateString()}
-          disabled={pending}
-          onChange={(date) => { void changeDate(date); }}
-          allowPast
-          label={dateLabel}
-          ariaLabel={t.changeDueDate(session.title, dateLabel(selected))}
-        />
-      </span>
+      {/* Fixed placement keeps the month out of the scrolling list, like the row's other pickers. */}
+      <TodoDatePicker
+        value={selected}
+        today={getLocalDateString()}
+        disabled={pending}
+        onChange={(date) => { void changeDate(date); }}
+        allowPast
+        label={dateLabel}
+        ariaLabel={t.changeDueDate(session.title, dateLabel(selected))}
+        popoverPlacement="fixed"
+      />
     </span>
   );
 }

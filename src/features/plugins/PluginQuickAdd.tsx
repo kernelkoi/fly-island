@@ -81,7 +81,9 @@ export function PluginQuickAdd({ pluginId, date, listId, placeholder, className 
           }}
         />
         {picksDate && (
-          <TodoDatePicker value={chosenDate} today={today} disabled={adding} onChange={setChosenDate} />
+          // Fixed like the rows' editors: the plugin page scrolls, and its own overflow would clip
+          // the month opened from the calendar's bottom row.
+          <TodoDatePicker value={chosenDate} today={today} disabled={adding} onChange={setChosenDate} popoverPlacement="fixed" />
         )}
       </form>
       {error && <p className="plugin-quick-add__error" role="alert">{error}</p>}

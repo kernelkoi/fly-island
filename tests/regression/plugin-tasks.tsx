@@ -273,7 +273,8 @@ try {
     const monthDay = (date: string) => new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric" }).format(new Date(`${date}T00:00:00`));
     const dueButtonOf = (title: string) => rowOf(title).querySelector<HTMLButtonElement>(".plugin-due-date .todo-date-picker__button")!;
     const pickDay = async (day: string) => {
-      await act(async () => document.querySelector<HTMLButtonElement>(`.plugin-due-date .todo-date-popover [data-date="${day}"]`)!.click());
+      // The month is portaled out of the row (and the island's scaled panel) while open.
+      await act(async () => document.querySelector<HTMLButtonElement>(`.todo-date-popover [data-date="${day}"]`)!.click());
       await wait();
     };
     check(document.querySelectorAll(".plugin-due-date").length === 7, "每个未完成行都有改到期日按钮");
@@ -281,15 +282,15 @@ try {
     check(dueButtonOf("逾期的活").getAttribute("aria-label") === t.changeDueDate("逾期的活", monthDay(dayFromNow(-1))),
       "改到期日按钮的无障碍名带着任务和当前日期");
     await act(async () => dueButtonOf("逾期的活").click()); await wait();
-    check(document.querySelector(".plugin-due-date .todo-date-popover"), "点日期按钮打开月历");
-    check(!document.querySelector<HTMLButtonElement>(`.plugin-due-date .todo-date-popover [data-date="${dayFromNow(-3)}"]`)?.disabled,
+    check(document.querySelector(".todo-date-popover"), "点日期按钮打开月历");
+    check(!document.querySelector<HTMLButtonElement>(`.todo-date-popover [data-date="${dayFromNow(-3)}"]`)?.disabled,
       "改到期日允许选择过去的日期");
     await pickDay(dayFromNow(1));
     check(ran.includes(`dida365/due.p1.late.${dayFromNow(1)}`), "选择新日期把该行的命名空间动作发给插件");
     check(dueButtonOf("逾期的活").getAttribute("aria-label") === t.changeDueDate("逾期的活", monthDay(dayFromNow(1))),
       "选完后按钮显示新日期");
     await act(async () => dueButtonOf("学习清单的活").click()); await wait();
-    await act(async () => [...document.querySelectorAll<HTMLButtonElement>(".plugin-due-date .todo-date-popover__footer button")]
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>(".todo-date-popover__footer button")]
       .find((button) => button.textContent === TRANSLATIONS[locale].notebook.clearDate)!.click());
     await wait();
     check(ran.includes("dida365/due.p2.study.clear"), "清除日期把 clear 动作发给插件");

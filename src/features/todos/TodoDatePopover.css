@@ -17,6 +17,12 @@
   transform-origin: top right;
 }
 
+/* Anchored to the island shape for rows inside a scrolling list, which would clip it. The
+   component measures itself and sets top/left inline, flipping above the button near the bottom. */
+.todo-date-popover--fixed {
+  position: fixed;
+}
+
 .todo-date-popover button {
   display: inline-grid;
   place-items: center;

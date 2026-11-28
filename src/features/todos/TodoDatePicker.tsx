@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CalendarDays } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { addDays } from "./schedule";
@@ -16,6 +17,7 @@ export function TodoDatePicker({
   label,
   ariaLabel,
   allowPast = false,
+  popoverPlacement = "absolute",
 }: {
   /** Chosen day (YYYY-MM-DD), or null for the list's own day. */
   value: string | null;
@@ -27,11 +29,14 @@ export function TodoDatePicker({
   /** Overrides the accessible name; the default is the pick-date wording plus the visible label. */
   ariaLabel?: string;
   allowPast?: boolean;
+  /** "fixed" anchors the month to the island shape, for a row inside a scrolling list. */
+  popoverPlacement?: "absolute" | "fixed";
 }) {
   const t = useTranslation();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const wrapperRef = useRef<HTMLSpanElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const id = useId();
   const showing = open && !disabled;
   const isLater = value !== null && value > today;
@@ -47,7 +52,9 @@ export function TodoDatePicker({
   useEffect(() => {
     if (!showing) return;
     const outside = (event: PointerEvent | FocusEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      // A fixed month is portaled out of the row, so it has to count as inside by itself.
+      if (!wrapperRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
     // The todo page stays mounted while collapsed; release its lock when it becomes hidden.
     const island = wrapperRef.current?.closest(".island");
@@ -67,6 +74,25 @@ export function TodoDatePicker({
     };
   }, [showing]);
   const close = () => { setOpen(false); buttonRef.current?.focus({ preventScroll: true }); };
+  const popover = (
+    <TodoDatePopover
+      id={id}
+      value={value}
+      today={today}
+      onSelect={onChange}
+      onClose={close}
+      allowPast={allowPast}
+      chooseDate={allowPast ? taskDueDateChoice : undefined}
+      fixed={popoverPlacement === "fixed"}
+      anchorRef={wrapperRef}
+      popoverRef={popoverRef}
+    />
+  );
+  // A fixed month leaves the scrolling row and the scaled page panel behind: that panel's scale
+  // would otherwise become its containing block, and the stage keeps the island's CSS variables.
+  const host = showing && popoverPlacement === "fixed"
+    ? wrapperRef.current?.closest<HTMLElement>(".stage") ?? document.body
+    : null;
 
   return (
     <span ref={wrapperRef} className="todo-date-picker">
@@ -84,7 +110,7 @@ export function TodoDatePicker({
         <CalendarDays size={13} strokeWidth={2.2} aria-hidden="true" />
         <span>{displayLabel}</span>
       </button>
-      {showing && <TodoDatePopover id={id} value={value} today={today} onSelect={onChange} onClose={close} allowPast={allowPast} chooseDate={allowPast ? taskDueDateChoice : undefined} />}
+      {showing && (host ? createPortal(popover, host) : popover)}
     </span>
   );
 }

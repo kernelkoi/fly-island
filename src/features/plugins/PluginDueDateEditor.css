@@ -6,8 +6,7 @@
   gap: var(--space-xs);
 }
 
-.plugin-due-date,
-.plugin-due-date__position {
+.plugin-due-date {
   position: relative;
   display: inline-flex;
 }
@@ -23,10 +22,4 @@
 
 .plugin-due-date .todo-date-picker__button > span {
   display: none;
-}
-
-.plugin-due-date .todo-date-popover {
-  position: fixed;
-  top: var(--plugin-picker-top, 100px);
-  right: var(--plugin-picker-right, 16px);
 }
