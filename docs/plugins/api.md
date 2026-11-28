@@ -18,8 +18,8 @@ Use UTF-8 without a BOM, one JSON-RPC 2.0 object per newline, flushing after eac
 
 | 方向 / Direction | 方法 / Method | 参数与返回 / Parameters and response |
 | --- | --- | --- |
-| 宿主 → 插件 / Host → plugin | `initialize` request | `params: {apiVersion: 1, settings: object}`；`result: {apiVersion: 1}`，10 秒内 / within 10 seconds |
-| 宿主 → 插件 / Host → plugin | `action` request | `params: {id: string}`；同请求 id 的 JSON result 或 error，15 秒内 / matching request ID and JSON result or error within 15 seconds |
+| 宿主 → 插件 / Host → plugin | `initialize` request | `params: {apiVersion: 1, settings: object}`；`result: {apiVersion: 1, actionStartDeadline?: boolean}`，10 秒内 / within 10 seconds |
+| 宿主 → 插件 / Host → plugin | `action` request | `params: {id: string, startByMs?: i64}`；同请求 id 的 JSON result 或 error，从入队起 15 秒内开始、27 秒内返回结果 / matching request ID and JSON result or error: start within 15 s, result within 27 s of enqueue |
 | 插件 → 宿主 / Plugin → host | `publish` notification | 无 RPC id，params 为完整 `Contributions`；宿主不响应 / no RPC ID, complete `Contributions`, no response |
 | 宿主 → 插件 / Host → plugin | `shutdown` notification | `params: {}`；无需响应，清理并退出 / no response; clean up and exit |
 
@@ -57,9 +57,17 @@ For failure send error instead of result:
 {"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Token expired; sign in again"}}
 ```
 
-清单 actions 生成设置页按钮；会话/消息 action 是插件选择的不透明字符串，必须在最近一次快照中仍存在；会话行还可以用 `actionPrefixes` 声明一段动作命名空间，以其中任一前缀开头的 id 也算已知。宿主仅允许这几类动作——插件最近一次 publish 带 `composer: true` 时，还允许以 `create.` 开头的动作（快速添加待办，标题由插件解析、非法则返回错误）。传给插件的参数**只有 id**，不传路径、会话对象或其他 payload。插件在自身内存中映射 id 到安全目标，不把 id 当 shell 命令/任意 URL。无 action 的条目可展示但不能跳转。result 只完成调用，不更新设置或快照；需另行 publish。宿主把插件 `error.message` 截成一行（≤300 字符）显示在触发动作的那一行，没有 message 时回退通用错误；SDK 原样传递插件返回的错误文案，所以文案要面向用户，且不得包含令牌、口令或响应体。
+清单 actions 生成设置页按钮；会话/消息 action 是插件选择的不透明字符串，必须在最近一次快照中仍存在；会话行还可以用 `actionPrefixes` 声明一段动作命名空间，以其中任一前缀开头的 id 也算已知。宿主仅允许这几类动作——插件最近一次 publish 带 `composer: true` 时，还允许以 `create.` 开头的动作（快速添加待办，标题由插件解析、非法则返回错误）。动作业务参数只有 `id`；`startByMs` 是可选的宿主调度元数据，不传路径或会话对象。插件在自身内存中映射 id 到安全目标，不把 id 当 shell 命令/任意 URL。无 action 的条目可展示但不能跳转。result 只完成调用，不更新设置或快照；需另行 publish。宿主把插件 `error.message` 截成一行（≤300 字符）显示在触发动作的那一行，没有 message 时回退通用错误；SDK 原样传递插件返回的错误文案，所以文案要面向用户，且不得包含令牌、口令或响应体。
 
-Manifest actions create settings buttons. Session/message actions are opaque strings chosen by the plugin and must remain in its latest snapshot; a session row may also declare a namespace in `actionPrefixes`, and any id starting with one of those prefixes is known too. Only these kinds are allowed — plus, when the latest publish carries `composer: true`, actions starting with `create.` (quick-adding a todo; the plugin parses the title and answers error if it is invalid). The host sends **only the action ID**, no path, object or extra payload. Keep a validated ID-to-target mapping inside the process; never interpret IDs as shell commands or arbitrary URLs. Entries without actions display but cannot navigate. A result completes the call without updating settings/snapshots; publish separately. The host shows the plugin's `error.message` on the row that triggered the action as one line of at most 300 characters, falling back to a generic error when it is missing. The SDK passes the message through, so word it for the user and keep tokens, secrets and response bodies out of it.
+Manifest actions create settings buttons. Session/message actions are opaque strings chosen by the plugin and must remain in its latest snapshot; a session row may also declare a namespace in `actionPrefixes`, and any id starting with one of those prefixes is known too. Only these kinds are allowed — plus, when the latest publish carries `composer: true`, actions starting with `create.` (quick-adding a todo; the plugin parses the title and answers error if it is invalid). The action ID is the only business parameter; `startByMs` is optional scheduling metadata, not a path or session object. Keep a validated ID-to-target mapping inside the process; never interpret IDs as shell commands or arbitrary URLs. Entries without actions display but cannot navigate. A result completes the call without updating settings/snapshots; publish separately. The host shows the plugin's `error.message` on the row that triggered the action as one line of at most 300 characters, falling back to a generic error when it is missing. The SDK passes the message through, so word it for the user and keep tokens, secrets and response bodies out of it.
+
+`startByMs` 是本机 Unix 毫秒，宿主只发给在握手响应中声明 `actionStartDeadline: true` 的插件。若提供，开始动作前必须检查，达到或超过截止时间返回 `plugin_action_expired`，不产生副作用；没有这个字段的旧宿主仍可调用。**开始截止时间不是结果截止时间**：动作已经交付后，宿主还会等它返回结果（从入队起最长 27 秒，覆盖 15 秒开始窗口与写入自身的 10 秒请求）；只有进程没有回包时宿主才判为未确认。写请求已经发出但无法确认结果时，返回 `plugin_action_unconfirmed`，不要自动重试。
+
+没有声明该能力的旧插件不受这层保护：宿主无法在它内部的队列里取消已经交付的请求，动作仍可能在该插件出队后执行，只是界面会按未确认提示用户核对。要获得完整保护，宿主与插件需要同时是支持该协商的版本。
+
+An older plugin without the advertised capability is not covered: the host cannot cancel a request already delivered into that plugin's own queue, so the action may still run once it is dequeued, with the UI asking the user to check. Full protection needs both a host and a plugin that support this negotiation.
+
+`startByMs` is a local Unix timestamp in milliseconds. The host sends it only to plugins that advertise `actionStartDeadline: true` in the handshake response. When present, check it before starting the action; at or after the deadline, return `plugin_action_expired` without side effects. Older hosts may omit the field. If a write was sent but its outcome cannot be confirmed, return `plugin_action_unconfirmed` and do not retry automatically.
 
 长时间登录异步启动并立即返回，网络请求有超时。SDK poll/action 在同一个循环中执行，阻塞 poll 同样阻塞下一条 action/shutdown；耗时工作放到可取消 worker，poll 只读缓存。
 
@@ -71,9 +79,13 @@ Start long sign-in work asynchronously and respond immediately; bound network ti
 {"jsonrpc":"2.0","method":"publish","params":{"quota":[{"id":"account","label":"Example","remainingPercent":75,"secondaryPercent":50,"balance":null,"resetsAt":1800003600000,"updatedAt":1800000000000}],"sessions":[{"id":"session-42","title":"Review changes","cwd":"D:/work/demo","status":"running","updatedAt":1800000000000,"action":"open-session-42"}],"notifications":[{"id":"message-7","sourceId":"team","appName":"Example","icon":"plugin","title":"Review ready","body":"The requested review is complete.","receivedAt":1800000000000,"action":null}]}}
 ```
 
-示例请换成真实时间与数据。每次 publish **替换本插件全部三个数组**；缺省数组等于空数组，不是「保持旧值」。需保留的会话与消息也要发出。清空用 `{"quota":[],"sessions":[],"notifications":[]}`。非空数组必须在 manifest.contributes 与 permissions 中声明。各插件快照相互独立。
+示例请换成真实时间与数据。每次成功刷新后的 publish **替换本插件全部三个数组**；缺省数组等于空数组，不是「保持旧值」。需保留的会话与消息也要发出。清空用 `{"quota":[],"sessions":[],"notifications":[]}`。非空数组必须在 manifest.contributes 与 permissions 中声明。各插件快照相互独立。
 
-Replace example times/data with real values. Every publish **replaces all three arrays for this plugin**; omitted arrays mean empty, not unchanged. Include sessions/messages that should remain visible. Empty all three to clear. Nonempty arrays require matching contributions and permissions. Each plugin has its own snapshot.
+Replace example times/data with real values. Each fresh publish **replaces all three arrays for this plugin**; omitted arrays mean empty, not unchanged. Include sessions/messages that should remain visible. Empty all three to clear. Nonempty arrays require matching contributions and permissions. Each plugin has its own snapshot.
+
+刷新失败可发 `stale: true`。宿主已有最近一次成功快照时，保留其数据并标记过时；否则使用插件附带的快照。Rust SDK 自动轮询失败时重发最近成功发布的快照，包括动作直接发布的快照。
+
+On refresh failure, publish `stale: true`. The host marks its last successful snapshot stale if it has one; otherwise it uses the supplied snapshot. On a failed poll the Rust SDK resends the last successful publish, including publishes from actions.
 
 所有扩展对象拒绝未知字段。下表 `?` 为允许 null 或省略的 Option 字段，建议显式发 null，其余字段必填。文本纯文本、每字段最多 4096 UTF-8 字节且无 NUL；每数组内 id 非空且唯一（不套用 manifest id 正则）。时间为带符号 64 位 Unix **毫秒**；宿主不自动修正秒或保证时间合理，必须保留真实事件时间。不发布凭据、请求头、完整 transcript 或伪造成功。
 
@@ -84,6 +96,10 @@ If a plugin supports quick add, include `"composer": true` at the top of `publis
 ```json
 {"jsonrpc":"2.0","method":"publish","params":{"sessions":[],"composer":true}}
 ```
+
+宿主在 `initialize` 的 settings 里加入保留键 `_host-failed-task-lists: true`，表示它接受 publish 顶层的可选 `failedTaskLists: string[]`（最多 200 个非空、唯一清单 id）。插件部分清单读取失败、且本轮仍发布其余清单时，把这些清单 id 一起发出：插件进程重启后内存为空，宿主用它们保留自己最近确认的这些清单的行，避免一次部分失败把已显示的行清掉。旧宿主没有该保留键，也会因未知字段拒绝整次 publish，所以插件只在看到键时发送。该字段只用于宿主内部，不出现在前端快照里；action 之后的发布同样可以带上，清单成功读到后应省略。
+
+The host adds a reserved settings key `_host-failed-task-lists: true` to `initialize`, meaning it accepts an optional top-level `failedTaskLists: string[]` on publish (at most 200 nonempty, unique list IDs). When some lists fail and the plugin still publishes the others, it includes those list IDs: a restarted process has no memory, so the host keeps the rows it last confirmed for those lists instead of a partial read erasing them. Older hosts lack the key and reject the whole publish on an unknown field, so send it only when the key is present. It stays inside the host and never reaches the page; publishes after an action may carry it too, and a successful read of those lists should omit it.
 
 Contribution objects reject unknown fields. `?` below means an Option field accepting null or omission; explicit null is recommended. All other fields are required. Text is plain text, ≤4096 UTF-8 bytes per field, without NUL. IDs are nonempty and unique per array; the manifest-ID regex does not apply. Times are signed 64-bit Unix **milliseconds**; the host neither converts seconds nor ensures plausible dates. Preserve real event times. Never publish secrets, headers, full transcripts or fabricated success.
 

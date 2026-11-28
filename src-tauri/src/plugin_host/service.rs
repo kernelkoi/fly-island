@@ -110,6 +110,9 @@ impl Host {
             return Ok(());
         }
         let mut settings = storage::runtime_settings(&p)?;
+        // Reserved host capability: the plugin may name lists it could not read, and this host
+        // will carry their last confirmed rows itself. Not a user setting and never persisted.
+        settings["_host-failed-task-lists"] = json!(true);
         let hosted_breaks = crate::eye_care::supports_host_windows(&p.manifest);
         if hosted_breaks { settings["_host-eye-care-windows"] = json!(true); }
         let break_language_english = settings["language"] == "en";
@@ -397,19 +400,25 @@ impl Host {
         if !self.enabled { return Ok(Value::Null); }
         let p = self.installed_for_runtime(id)?;
         let live = self.snapshot();
-        let declared = p.manifest.actions.iter().any(|a| a.id == action)
-            || live.live.get(id).is_some_and(|l| {
-                let data = &l.data;
-                data.sessions.iter().any(|s| s.action.as_deref() == Some(action)
-                    || s.action_prefixes.iter().any(|prefix| action.starts_with(prefix)))
-                    || data.notifications.iter().any(|n| n.action.as_deref() == Some(action))
-                    // The composer assembles `create.<day>[.list:<id>].<title>` at submit time, so it
-                    // never appears in a snapshot; the plugin that announced the composer owns these
-                    // ids and rejects the malformed ones itself.
-                    || (data.composer && action.starts_with("create."))
-            });
+        let data = live.live.get(id).map(|l| &l.data);
+        let row = data.and_then(|d| d.sessions.iter().find(|s| s.action.as_deref() == Some(action)
+            || s.action_prefixes.iter().any(|prefix| action.starts_with(prefix))));
+        // The composer builds its IDs at submit time. The declaring plugin validates the suffix.
+        let create = data.is_some_and(|d| d.composer && action.starts_with("create."));
+        let declared = create || row.is_some() || p.manifest.actions.iter().any(|a| a.id == action)
+            || data.is_some_and(|d| d.notifications.iter().any(|n| n.action.as_deref() == Some(action)));
         if !declared { return Err("Unknown plugin action".into()); }
+        let task_write = create || row.is_some_and(|s| s.kind.as_deref() == Some("task"));
         let reply = self.workers.lock().map_err(|e| e.to_string())?.get(id).ok_or("Plugin is stopped")?.request("action", json!({"id":action}))?;
-        reply.recv_timeout(std::time::Duration::from_secs(16)).map_err(|_| "Plugin action timeout".to_owned())?
+        // A task write may still be executing after the start window; the host keeps waiting for
+        // its outcome. Other actions keep the old 16 s answer.
+        let mut wait = process::ACTION_TIMEOUT + std::time::Duration::from_secs(1);
+        if task_write { wait = process::ACTION_REPLY_TIMEOUT + std::time::Duration::from_secs(1); }
+        let result = reply.recv_timeout(wait)
+            .unwrap_or_else(|_| Err(process::ACTION_UNCONFIRMED.into()));
+        // Existing non-task callers still use the generic timeout feedback.
+        result.map_err(|error| if !task_write && matches!(error.as_str(), process::ACTION_EXPIRED | process::ACTION_UNCONFIRMED) {
+            "Plugin action timeout".into()
+        } else { error })
     }
 }

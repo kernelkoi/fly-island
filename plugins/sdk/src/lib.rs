@@ -1,16 +1,26 @@
 //! API v1 stdio runtime. Only JSON-RPC goes to stdout; credentials never go to diagnostics.
 //! Local credential algorithm reference: Renly1994/xiaotang-daozai src/native_auth.rs (MIT).
 //! Copyright (c) 2026 小唐的Token and Daozai contributors.
-use std::{io::{self, BufRead, Read, Write}, path::Path, sync::mpsc, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
+use std::{io::{self, BufRead, Read, Write}, path::Path, sync::{mpsc, Mutex, MutexGuard, PoisonError}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 pub use serde_json::{json, Value};
 pub mod credentials;
 const MAX_LINE: usize = 256 * 1024;
-static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[derive(Default)]
+struct PublishState {
+    ready: bool,
+    latest: Option<Value>,
+}
+
+static PUBLISH_STATE: Mutex<PublishState> = Mutex::new(PublishState { ready: false, latest: None });
+
+fn publish_state() -> MutexGuard<'static, PublishState> {
+    PUBLISH_STATE.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 pub fn now() -> i64 { SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64) }
 pub fn empty() -> Value { json!({"quota":[],"sessions":[],"notifications":[]}) }
-/// An empty publish flagged as the last known data: the refresh failed, so the UI keeps the
-/// previous rows and says so instead of reading the emptiness as "no tasks".
+/// Marks a snapshot as last known data after a failed refresh.
 pub fn stale(data: Value) -> Value {
     let mut data = data;
     if let Some(object) = data.as_object_mut() { object.insert("stale".into(), json!(true)); }
@@ -45,8 +55,28 @@ pub fn send(value: Value) -> io::Result<()> {
 }
 
 pub fn publish(data: Value) -> io::Result<()> {
-    if !READY.load(std::sync::atomic::Ordering::Acquire) { return Ok(()); }
-    send(json!({"jsonrpc":"2.0","method":"publish","params":bounded_contributions(data)}))
+    // Keep wire order and the latest snapshot in sync, even for background publishers.
+    let mut state = publish_state();
+    if !state.ready { return Ok(()); }
+    let is_stale = data["stale"] == true;
+    let data = bounded_contributions(data);
+    if is_stale {
+        return send_publish(&stale(data));
+    }
+    send_publish(&data)?;
+    state.latest = Some(data);
+    Ok(())
+}
+
+fn send_publish(data: &Value) -> io::Result<()> {
+    send(json!({"jsonrpc":"2.0","method":"publish","params":data}))
+}
+
+fn resend_stale() -> io::Result<()> {
+    let state = publish_state();
+    // The stored payload already fits the wire budget with room for the stale flag.
+    let data = stale(state.latest.clone().unwrap_or_else(empty));
+    send_publish(&data)
 }
 
 fn bounded_contributions(mut data: Value) -> Value {
@@ -184,7 +214,7 @@ pub fn decrypt_chromium_v10(key: &[u8], ciphertext: &[u8]) -> Result<String, Str
 pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value, String>, mut action: impl FnMut(&str, &Value) -> Result<Value, String>) -> Result<(), String> {
     struct RuntimeGuard;
     impl Drop for RuntimeGuard {
-        fn drop(&mut self) { READY.store(false, std::sync::atomic::Ordering::Release); }
+        fn drop(&mut self) { *publish_state() = PublishState::default(); }
     }
     let _runtime = RuntimeGuard;
     let (tx, rx) = mpsc::sync_channel(16);
@@ -202,9 +232,6 @@ pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value,
     let mut settings = Value::Null;
     let mut ready = false;
     let mut next = Instant::now();
-    // The last publish the poll produced; a failed refresh resends it with a stale flag rather
-    // than wiping the rows on screen, which the UI would mistake for "no tasks".
-    let mut last = empty();
     loop {
         let wait = if ready { next.saturating_duration_since(Instant::now()) } else { Duration::from_secs(10) };
         match rx.recv_timeout(wait) {
@@ -217,18 +244,28 @@ pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value,
                     Some("initialize") if !ready && v["params"]["apiVersion"] == 1 => {
                         settings = v["params"]["settings"].clone();
                         if let Some(seconds) = settings["interval"].as_str().and_then(|s| s.parse::<u64>().ok()) { interval = Duration::from_secs(seconds.clamp(1,3600)); }
-                        send(json!({"jsonrpc":"2.0","id":id,"result":{"apiVersion":1}})).map_err(|e| e.to_string())?;
-                        READY.store(true, std::sync::atomic::Ordering::Release);
+                        send(json!({"jsonrpc":"2.0","id":id,"result":{"apiVersion":1,"actionStartDeadline":true}})).map_err(|e| e.to_string())?;
+                        publish_state().ready = true;
                         ready = true; next = Instant::now();
                     }
                     Some("action") if ready => {
-                        match action(v["params"]["id"].as_str().unwrap_or_default(), &settings) {
+                        let params = &v["params"];
+                        let result = match params.get("startByMs").map(Value::as_i64) {
+                            Some(Some(deadline)) if now() >= deadline => {
+                                Err((-32000, "plugin_action_expired".into()))
+                            }
+                            Some(None) => Err((-32602, "Invalid startByMs".into())),
+                            _ => {
+                                next = Instant::now();
+                                action(params["id"].as_str().unwrap_or_default(), &settings)
+                                    .map_err(|message| (-32000, message))
+                            }
+                        };
+                        match result {
                             Ok(result) => send(json!({"jsonrpc":"2.0","id":id,"result":result})),
-                            // The plugin's own words say what failed (expired token, rate limit);
-                            // the host shows them in the page and bounds the length.
-                            Err(message) => send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":message}})),
+                            // The host shows the plugin's message and bounds the length.
+                            Err((code, message)) => send(json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})),
                         }.map_err(|e| e.to_string())?;
-                        next = Instant::now();
                     }
                     _ => { send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":"Unknown method"}})).map_err(|e| e.to_string())?; }
                 }
@@ -238,9 +275,13 @@ pub fn run(mut interval: Duration, mut poll: impl FnMut(&Value) -> Result<Value,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
         if ready && Instant::now() >= next {
-            let params = match poll(&settings) { Ok(v) => v, Err(_) => { eprintln!("Plugin refresh unavailable; check local sign-in"); stale(last.clone()) } };
-            publish(params.clone()).map_err(|e| e.to_string())?;
-            last = params;
+            match poll(&settings) {
+                Ok(data) => publish(data),
+                Err(_) => {
+                    eprintln!("Plugin refresh unavailable; check local sign-in");
+                    resend_stale()
+                }
+            }.map_err(|e| e.to_string())?;
             next = Instant::now() + interval;
         }
     }

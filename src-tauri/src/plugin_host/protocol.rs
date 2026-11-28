@@ -23,6 +23,11 @@ pub struct Contributions {
     /// the UI shows them with a failure note instead of mistaking them for fresh.
     #[serde(default)]
     pub stale: bool,
+    /// Task lists whose read failed in this snapshot. Only sent to a host that advertised
+    /// support: the host then keeps the rows it last confirmed for those lists, which a
+    /// restarted plugin has no memory of. Wire-only; older hosts reject the field.
+    #[serde(default, rename = "failedTaskLists")]
+    pub failed_task_lists: Vec<String>,
 }
 
 /// What a plugin's island page shows. The host draws it with its own components: no HTML,
@@ -177,7 +182,12 @@ pub fn parse_publish(line: &str, manifest: &Manifest) -> Result<Option<Contribut
         || c.notifications.iter().any(|n| !action(&n.action) || [&n.id, &n.source_id, &n.app_name, &n.icon, &n.title, &n.body].iter().any(|s| !text(s)))
         || !unique(c.quota.iter().map(|q| q.id.as_str()).collect())
         || !unique(c.sessions.iter().map(|s| s.id.as_str()).collect())
-        || !unique(c.notifications.iter().map(|n| n.id.as_str()).collect()) {
+        || !unique(c.notifications.iter().map(|n| n.id.as_str()).collect())
+        // One id per failed list, bounded like the rows themselves: a plugin names the lists it
+        // could not read, and the host matches them against rows it already has.
+        || c.failed_task_lists.len() > 200
+        || c.failed_task_lists.iter().any(|list| !text(list) || list.is_empty())
+        || !unique(c.failed_task_lists.iter().map(String::as_str).collect()) {
         return Err("Invalid contribution fields".into());
     }
     if let Some(panel) = &c.panel {

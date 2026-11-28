@@ -15,6 +15,75 @@ fn action_errors_reach_the_page_on_one_bounded_line() {
 }
 
 #[test]
+fn stale_publish_does_not_replace_a_confirmed_snapshot() {
+    let payload = |status, stale| {
+        let line = json!({"jsonrpc":"2.0","method":"publish","params":{
+            "sessions":[{"id":"example","title":"Review","status":status,"updatedAt":1}], "stale":stale
+        }});
+        protocol::parse_publish(&line.to_string(), &manifest()).unwrap().unwrap()
+    };
+    let mut last = None;
+    let recovered = process::received_snapshot(&mut last, payload("running", true));
+    assert!(recovered.stale);
+    assert_eq!(recovered.sessions[0].status, "running");
+    process::received_snapshot(&mut last, payload("completed", false));
+    let replayed = process::received_snapshot(&mut last, payload("running", true));
+    assert!(replayed.stale);
+    assert_eq!(replayed.sessions[0].status, "completed");
+    let replayed = process::received_snapshot(&mut last, protocol::Contributions { stale: true, ..Default::default() });
+    assert!(replayed.stale);
+    assert_eq!(replayed.sessions[0].status, "completed");
+}
+
+#[test]
+fn a_reply_that_outlived_the_start_deadline_is_still_taken() {
+    let queued = Instant::now();
+    let (reply, receiver) = std::sync::mpsc::sync_channel(1);
+    let mut pending = std::collections::HashMap::from([(7u64, (queued + process::ACTION_REPLY_TIMEOUT, reply))]);
+    process::expire_pending(&mut pending, queued + process::ACTION_TIMEOUT);
+    assert_eq!(pending.len(), 1);
+    assert!(receiver.try_recv().is_err());
+    process::expire_pending(&mut pending, queued + process::ACTION_REPLY_TIMEOUT);
+    assert!(pending.is_empty());
+    assert_eq!(receiver.try_recv().unwrap(), Err("plugin_action_unconfirmed".into()));
+}
+
+#[test]
+fn a_restart_keeps_rows_of_lists_its_first_poll_could_not_read() {
+    let row = |id: &str, list: &str, updated: i64| json!({
+        "id":id,"title":id,"kind":"task","listId":list,"cwd":"List","status":"running",
+        "updatedAt":updated,"action":null,"detail":null
+    });
+    let parse = |params: serde_json::Value| protocol::parse_publish(
+        &json!({"jsonrpc":"2.0","method":"publish","params":params}).to_string(), &manifest()).unwrap().unwrap();
+    let mut last = None;
+    process::received_snapshot(&mut last, parse(json!({"sessions":[row("a:1","a",10), row("b:1","b",5)]})));
+    // After the restart list a cannot be read; the fresh process remembers nothing of its rows.
+    let merged = process::received_snapshot(&mut last, parse(json!({"sessions":[row("b:2","b",20)], "failedTaskLists":["a"]})));
+    assert_eq!(merged.sessions.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["b:2", "a:1"]);
+    // Wire-only: the page never sees the metadata, and the cache is the merged view.
+    assert!(merged.failed_task_lists.is_empty());
+    // A later poll that does read list a replaces it; nothing is resurrected from the old rows.
+    let fresh = process::received_snapshot(&mut last, parse(json!({"sessions":[row("b:3","b",30), row("a:2","a",40)]})));
+    assert_eq!(fresh.sessions.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["b:3", "a:2"]);
+    let stale = process::received_snapshot(&mut last, protocol::Contributions { stale: true, failed_task_lists: vec!["a".into()], ..Default::default() });
+    assert!(stale.stale && stale.failed_task_lists.is_empty() && stale.sessions.len() == 2);
+}
+
+#[test]
+fn failed_list_metadata_is_bounded_and_ignored_without_a_cache() {
+    let publish = |params: serde_json::Value| json!({"jsonrpc":"2.0","method":"publish","params":params}).to_string();
+    let m = manifest();
+    for failed in [json!([""]), json!(["a","a"]), json!(["\0"]), json!((0..201).map(|i| i.to_string()).collect::<Vec<_>>())] {
+        assert!(protocol::parse_publish(&publish(json!({"sessions":[], "failedTaskLists":failed})), &m).is_err());
+    }
+    let data = protocol::parse_publish(&publish(json!({"sessions":[], "failedTaskLists":["a"]})), &m).unwrap().unwrap();
+    let mut last = None;
+    let first = process::received_snapshot(&mut last, data);
+    assert!(first.failed_task_lists.is_empty());
+}
+
+#[test]
 fn validates_manifest_and_protocol() {
     for (field, value) in [("id", json!("../escape")), ("id", json!("con")), ("apiVersion", json!(2)), ("permissions", json!(["webview"]))] {
         let mut v = serde_json::to_value(manifest()).unwrap(); v[field] = value;
@@ -361,6 +430,31 @@ fn example_worker_handshake_actions_and_stop() {
     let before = Instant::now(); drop(worker); assert!(before.elapsed() < Duration::from_secs(2));
     std::fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn a_request_that_outlived_its_queue_does_not_reach_the_worker() {
+    let root = temporary("expired-action");
+    std::fs::copy(fixture(), root.join("example-hello.exe")).unwrap();
+    let (waiting, queued) = std::sync::mpsc::sync_channel(1);
+    let (resume, gate) = std::sync::mpsc::sync_channel(1);
+    let gate = Mutex::new(Some(gate));
+    let worker = Worker::start(root.clone(), manifest(), json!({}), root.join("stderr.log"), Arc::new(move |_, status| {
+        if status == "starting" {
+            if let Some(gate) = gate.lock().unwrap().take() {
+                let _ = waiting.send(());
+                let _ = gate.recv_timeout(Duration::from_secs(20));
+            }
+        }
+    }));
+    queued.recv_timeout(Duration::from_secs(3)).unwrap();
+    let reply = worker.request("action", json!({"id":"hello"})).unwrap();
+    std::thread::sleep(Duration::from_secs(16));
+    resume.send(()).unwrap();
+    let result = reply.recv_timeout(Duration::from_secs(8)).unwrap();
+    drop(worker);
+    std::fs::remove_dir_all(root).unwrap();
+    assert_eq!(result, Err("plugin_action_expired".into()));
+}
+
 #[test]
 fn local_index_install_enable_publish_disable_uninstall() {
     let root = temporary("installation");

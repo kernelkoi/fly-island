@@ -1,10 +1,19 @@
-use std::{io::{BufRead, BufReader, Read, Write}, path::{Path, PathBuf}, process::{Command, Stdio}, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread, time::{Duration, Instant}};
+use std::{io::{BufRead, BufReader, Read, Write}, path::{Path, PathBuf}, process::{Command, Stdio}, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use serde_json::{json, Value};
 use super::{manifest::Manifest, protocol::{parse_publish, Contributions, MAX_LINE}};
 
+/// How long an action may wait in the host queue before it is dropped unstarted.
+pub(super) const ACTION_TIMEOUT: Duration = Duration::from_secs(15);
+/// From enqueue: the start window (15 s) plus a plugin's own 10 s write request and transport
+/// margin. The start deadline is not a reply deadline; a write the plugin did begin must be
+/// heard rather than reported "unconfirmed" over.
+pub(super) const ACTION_REPLY_TIMEOUT: Duration = Duration::from_secs(27);
+pub(super) const ACTION_EXPIRED: &str = "plugin_action_expired";
+pub(super) const ACTION_UNCONFIRMED: &str = "plugin_action_unconfirmed";
+
 pub type Publish = Arc<dyn Fn(Contributions, &str) + Send + Sync>;
-type Reply = mpsc::SyncSender<Result<Value, String>>;
-pub struct Request { method: String, params: Value, reply: Reply }
+pub(super) type Reply = mpsc::SyncSender<Result<Value, String>>;
+struct Request { method: String, params: Value, reply: Reply, deadline: Instant, reply_by: Instant }
 
 pub struct Worker {
     stop: Arc<AtomicBool>,
@@ -25,7 +34,9 @@ impl Worker {
 
     pub fn request(&self, method: &str, params: Value) -> Result<mpsc::Receiver<Result<Value, String>>, String> {
         let (reply, receiver) = mpsc::sync_channel(1);
-        self.sender.try_send(Request { method: method.into(), params, reply }).map_err(|_| "Plugin is busy or stopped".to_owned())?;
+        let now = Instant::now();
+        let request = Request { method: method.into(), params, reply, deadline: now + ACTION_TIMEOUT, reply_by: now + ACTION_REPLY_TIMEOUT };
+        self.sender.try_send(request).map_err(|_| "Plugin is busy or stopped".to_owned())?;
         Ok(receiver)
     }
 }
@@ -45,9 +56,9 @@ fn supervise(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path
     let mut attempt = 0;
     // The last rows the plugin published. A crash or a restart must not wipe them: the UI would
     // read the empty list as "the plugin has no tasks". They come back marked stale instead.
-    let mut last = Contributions::default();
+    let mut last = None;
     while !stop.load(Ordering::Acquire) {
-        publish(stale_of(&last), "starting");
+        publish(stale_of(last.as_ref()), "starting");
         let started = Instant::now();
         if let Err(error) = run(directory, manifest, settings, log, &stop, &receiver, &publish, &mut last) {
             let secrets: Vec<String> = manifest.settings.iter().filter(|s| s.kind == "secret")
@@ -62,22 +73,67 @@ fn supervise(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path
         // or a plugin that crashed six times over days would never come back.
         if started.elapsed() >= Duration::from_secs(60) { attempt = 0; }
         let Some(delay) = restart_delay(attempt) else {
-            publish(stale_of(&last), "failed");
+            publish(stale_of(last.as_ref()), "failed");
             return;
         };
-        publish(stale_of(&last), "restarting");
+        publish(stale_of(last.as_ref()), "restarting");
         attempt = attempt.saturating_add(1);
         let until = Instant::now() + delay;
         while Instant::now() < until && !stop.load(Ordering::Acquire) { thread::sleep(Duration::from_millis(50)); }
     }
-    publish(stale_of(&last), if stop.load(Ordering::Acquire) { "stopped" } else { "failed" });
+    publish(stale_of(last.as_ref()), if stop.load(Ordering::Acquire) { "stopped" } else { "failed" });
 }
 
 /// The last good rows, flagged as stale: the refresh that produced them failed.
-fn stale_of(last: &Contributions) -> Contributions {
-    let mut kept = last.clone();
+fn stale_of(last: Option<&Contributions>) -> Contributions {
+    let mut kept = last.cloned().unwrap_or_default();
     kept.stale = true;
     kept
+}
+
+pub(super) fn received_snapshot(last: &mut Option<Contributions>, data: Contributions) -> Contributions {
+    if data.stale {
+        // On a process restart its failed first poll may replay an empty or older cache. The
+        // wire metadata is never cached or handed to the page.
+        return last.as_ref().map_or_else(|| without_lists(data), |known| stale_of(Some(known)));
+    }
+    let merged = merge_failed_lists(last.as_ref(), data);
+    *last = Some(merged.clone());
+    merged
+}
+
+/// Keep the rows this host last confirmed for a list the plugin names as unreadable. A plugin
+/// restarted after a crash has no memory of them; without this, the first partial poll would
+/// erase what the user had just been shown. Fresh rows always win by id.
+fn merge_failed_lists(known: Option<&Contributions>, mut merged: Contributions) -> Contributions {
+    let failed = std::mem::take(&mut merged.failed_task_lists);
+    let Some(known) = known.filter(|_| !failed.is_empty()) else { return merged; };
+    let carried: std::collections::HashSet<&str> = merged.sessions.iter().map(|s| s.id.as_str()).collect();
+    let mut survivors: Vec<_> = known.sessions.iter()
+        .filter(|s| s.kind.as_deref() == Some("task"))
+        .filter(|s| s.list_id.as_deref().is_some_and(|list| failed.iter().any(|id| id == list)))
+        .filter(|s| !carried.contains(s.id.as_str()))
+        .cloned()
+        .collect();
+    // The page cap is the plugin's, so the host cannot grow past it either. Newest survivors
+    // win the remaining room.
+    survivors.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
+    let room = 200usize.saturating_sub(merged.sessions.len());
+    merged.sessions.extend(survivors.into_iter().take(room));
+    merged
+}
+
+fn without_lists(mut data: Contributions) -> Contributions {
+    data.failed_task_lists.clear();
+    data
+}
+
+/// A request whose start deadline passed may still be running; only the reply deadline says the
+/// outcome will never be known.
+pub(super) fn expire_pending(pending: &mut std::collections::HashMap<u64, (Instant, Reply)>, now: Instant) {
+    pending.retain(|_, (reply_by, reply)| {
+        if now < *reply_by { true } else { let _ = reply.send(Err(ACTION_UNCONFIRMED.into())); false }
+    });
 }
 
 fn plugin_command(directory: &Path, relative: &str) -> Result<Command, String> {
@@ -111,7 +167,7 @@ pub(super) fn disconnect_minimax(directory: &Path) -> Result<(), String> {
 }
 
 #[expect(clippy::too_many_arguments, reason = "one worker's context: every argument is a distinct part of the same run, not a call graph")]
-fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop: &AtomicBool, requests: &mpsc::Receiver<Request>, publish: &Publish, last: &mut Contributions) -> Result<(), String> {
+fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop: &AtomicBool, requests: &mpsc::Receiver<Request>, publish: &Publish, last: &mut Option<Contributions>) -> Result<(), String> {
     let mut child = plugin_command(directory, &manifest.runtime.command)?
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn().map_err(|e| e.to_string())?;
@@ -151,16 +207,30 @@ fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop
         writer.try_send(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"apiVersion":1,"settings":settings}}).to_string()).map_err(|e| e.to_string())?;
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut ready = false;
+        let mut start_deadline_supported = false;
         let mut next_id = 1u64;
         let mut pending: std::collections::HashMap<u64, (Instant, Reply)> = Default::default();
         while !stop.load(Ordering::Acquire) {
             if child.try_wait().map_err(|e| e.to_string())?.is_some() { return Err("Plugin exited".into()); }
             if !ready && Instant::now() > deadline { return Err("Plugin initialize timeout".into()); }
             if ready {
-                if let Ok(request) = requests.try_recv() {
-                    writer.try_send(json!({"jsonrpc":"2.0","id":next_id,"method":request.method,"params":request.params}).to_string()).map_err(|e| e.to_string())?;
-                    pending.insert(next_id, (Instant::now(), request.reply));
-                    next_id += 1;
+                if let Ok(mut request) = requests.try_recv() {
+                    let remaining = request.deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        let _ = request.reply.send(Err(ACTION_EXPIRED.into()));
+                    } else {
+                        // The deadline includes time in the host queue. The SDK checks it again
+                        // after its own queue, where a poll may still be blocking the action.
+                        if request.method == "action" && start_deadline_supported {
+                            if let Some(params) = request.params.as_object_mut() {
+                                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+                                params.insert("startByMs".into(), json!((now + remaining).as_millis() as i64));
+                            }
+                        }
+                        writer.try_send(json!({"jsonrpc":"2.0","id":next_id,"method":request.method,"params":request.params}).to_string()).map_err(|e| e.to_string())?;
+                        pending.insert(next_id, (request.reply_by, request.reply));
+                        next_id += 1;
+                    }
                 }
             }
             match lines.recv_timeout(Duration::from_millis(50)) {
@@ -171,9 +241,10 @@ fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop
                         if id == 0 && !ready {
                             if v["result"]["apiVersion"] != 1 { return Err("Plugin handshake failed".into()); }
                             ready = true;
+                            start_deadline_supported = v["result"]["actionStartDeadline"] == true;
                             // Keep whatever the previous run left until this one publishes: an
                             // empty list here would read as "the plugin has no tasks".
-                            publish(stale_of(last), "running");
+                            publish(stale_of(last.as_ref()), "running");
                         } else if let Some((_, reply)) = pending.remove(&id) {
                             let value = match v.get("result") {
                                 Some(result) => Ok(result.clone()),
@@ -183,18 +254,13 @@ fn run(directory: &Path, manifest: &Manifest, settings: &Value, log: &Path, stop
                         }
                     } else if let Some(c) = contribution {
                         if !ready { return Err("Plugin published before initialize".into()); }
-                        // Only a fresh snapshot replaces the last good rows. A stale one is the
-                        // plugin's own copy of them, and may be empty after its restart.
-                        if !c.stale { *last = c.clone(); }
-                        publish(c, "running");
+                        publish(received_snapshot(last, c), "running");
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Err("Plugin output closed".into()),
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
-            pending.retain(|_, (started, reply)| {
-                if started.elapsed() < Duration::from_secs(15) { true } else { let _ = reply.send(Err("Plugin action timeout".into())); false }
-            });
+            expire_pending(&mut pending, Instant::now());
         }
         // SDK plugins can release their own resources before the job terminates stragglers.
         let _ = writer.try_send(json!({"jsonrpc":"2.0","method":"shutdown","params":{}}).to_string());
