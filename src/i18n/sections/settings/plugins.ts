@@ -10,6 +10,7 @@ export type SettingsPluginsText = {
   empty: string; installed: string; available: string; install: string; update: string;
   uninstall: string; enabled: string; permissions: string; retry: string; save: string;
   developer: string; developerMode: string; develop: string; unavailable: string; index: string; directory: string; load: string; secret: string;
+  clear: string; show: string; hide: string; saved: string;
   status: Record<string, string>; permission: Record<string, string>;
   guide: string; checkUpdate: string;
   guideHint: string; readGuide: string; openGuideFailed: string; runAction: string; actionDone: string; actions: string; openSettings: string;
@@ -38,6 +39,7 @@ export const zhCN: SettingsPluginsText = {
   empty: "暂无插件", installed: "已安装", available: "可安装", install: "安装", update: "更新",
   uninstall: "卸载", enabled: "启用", permissions: "权限", retry: "刷新", save: "保存",
   developer: "开发者", developerMode: "开发者模式", develop: "开发插件", unavailable: "暂无可安装插件", index: "插件索引", directory: "本地插件目录", load: "加载", secret: "输入以替换凭据",
+  clear: "清除", show: "显示凭据", hide: "隐藏凭据", saved: "已保存",
   status: { starting: "启动中", running: "运行中", restarting: "正在重启", stopped: "已停用", failed: "启动失败" },
   permission: { network: "联网", "read-home-files": "读取本地文件", "write-home-files": "配置本地钩子", notifications: "消息", quota: "额度", sessions: "会话", panel: "岛上页面", "system-devices": "设备与音频输出", "desktop-windows": "桌面窗口", "private-browser": "独立登录" },
   market: {
@@ -102,6 +104,7 @@ export const en: SettingsPluginsText = {
   empty: "No plugins yet", installed: "Installed", available: "Available", install: "Install", update: "Update",
   uninstall: "Uninstall", enabled: "Enable", permissions: "Permissions", retry: "Refresh", save: "Save",
   developer: "Developer", developerMode: "Developer mode", develop: "Develop plugins", unavailable: "No plugins available", index: "Plugin index", directory: "Local plugin folder", load: "Load", secret: "Enter to replace credential",
+  clear: "Clear", show: "Show credential", hide: "Hide credential", saved: "Saved",
   status: { starting: "Starting", running: "Running", restarting: "Restarting", stopped: "Disabled", failed: "Failed to start" },
   permission: { network: "Network", "read-home-files": "Read local files", "write-home-files": "Configure local hooks", notifications: "Messages", quota: "Quota", sessions: "Sessions", panel: "Island page", "system-devices": "Devices and audio output", "desktop-windows": "Desktop windows", "private-browser": "Private sign-in" },
   market: {

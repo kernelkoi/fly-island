@@ -81,7 +81,8 @@ export function ExternalPluginGroup({ plugin, external, page }: { plugin: Placed
     : undefined;
   const settingsRows = settings.map((setting) => <PluginSettingRow
     key={`${plugin.id}/${setting.key}/${setting.type === "number" ? "number" : JSON.stringify(external.settings[setting.key])}`}
-    setting={setting} value={external.settings[setting.key] ?? setting.default} disabled={busy}
+    setting={setting} value={external.settings[setting.key] ?? setting.default}
+    configured={live[plugin.id]?.settingsConfigured === true} disabled={busy}
     onSave={(value) => { void perform(() => setPluginSetting(plugin.id, setting.key, value), setting.type !== "number", "settings"); }} />);
   const actionRows = actions.map((action) => <SettingsRow key={action.id} title={action.label[locale]} control={
     <SettingsLinkButton disabled={busy} ariaLabel={action.label[locale]}

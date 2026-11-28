@@ -1,0 +1,33 @@
+.plugin-secret__field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.plugin-secret__visibility {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--corner-md);
+  cursor: pointer;
+}
+
+.plugin-secret__visibility:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-white-a08);
+}
+
+.plugin-secret__visibility:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.plugin-secret__visibility:disabled {
+  opacity: 0.5;
+}
